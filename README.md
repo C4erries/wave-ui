@@ -57,3 +57,8 @@ Open the dev server URL from the console (Vite default is http://localhost:5173)
 - Recharts is used for lightweight visualizations.
 - Mock data is shipped so the UI builds and renders without a live backend.
 - Use Node.js 20.19+ or 22.12+ for Vite 7; older patch versions may emit warnings.
+
+## Docker / nginx proxy
+- nginx.conf proxies `/api` and `/metrics` to http://broker:8090 and serves built assets from /usr/share/nginx/html.
+- Dockerfile copies nginx.conf to /etc/nginx/conf.d/default.conf; docker-compose builds UI with VITE_USE_MOCKS=false and relies on relative URLs (VITE_API_BASE_URL / VITE_METRICS_URL can stay empty).
+

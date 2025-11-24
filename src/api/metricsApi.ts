@@ -2,7 +2,7 @@ import type { Histogram, HistogramBucket, LatencyPercentiles, MetricsSnapshot } 
 
 const baseURL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ??
-  'http://localhost:8090';
+  '';
 const metricsURL =
   (import.meta.env.VITE_METRICS_URL as string | undefined) ??
   `${baseURL}/metrics`;

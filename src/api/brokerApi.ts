@@ -11,7 +11,7 @@ import * as mock from './mockBrokerApi';
 
 const baseURL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ??
-  'http://localhost:8090';
+  '';
 const useMocks =
   (import.meta.env.VITE_USE_MOCKS as string | undefined)?.toLowerCase() !== 'false';
 
@@ -43,7 +43,8 @@ export async function fetchBrokerSummary(): Promise<BrokerSummary> {
 
 export async function fetchTopics(): Promise<Topic[]> {
   if (useMocks) return mock.getTopics();
-  return requestJSON('/api/topics');
+  const data = await requestJSON<Topic[] | undefined>('/api/topics');
+  return data ?? [];
 }
 
 export async function fetchTopicDetails(name: string): Promise<TopicDetails> {
@@ -68,14 +69,16 @@ export async function fetchMessages(
   if (query.offset !== undefined) params.set('offset', String(query.offset));
   if (query.limit !== undefined) params.set('limit', String(query.limit));
 
-  return requestJSON(
+  const data = await requestJSON<Message[] | undefined>(
     `/api/topics/${encodeURIComponent(topic)}/partitions/${partition}/messages?${params.toString()}`,
   );
+  return data ?? [];
 }
 
 export async function fetchConsumerGroups(): Promise<ConsumerGroup[]> {
   if (useMocks) return mock.getConsumerGroups();
-  return requestJSON('/api/consumers');
+  const data = await requestJSON<ConsumerGroup[] | undefined>('/api/consumers');
+  return data ?? [];
 }
 
 export async function createTopic(payload: {
