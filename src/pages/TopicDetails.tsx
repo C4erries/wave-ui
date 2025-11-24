@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { fetchMessages, fetchTopicDetails } from '@/api/brokerApi';
+import { fetchMessages, fetchTopicDetails, produceMessage } from '@/api/brokerApi';
 import type { Message, TopicDetails as TopicDetailsType } from '@/types';
 import { formatDate } from '@/utils/format';
 
@@ -12,6 +12,10 @@ export default function TopicDetails() {
   const [offset, setOffset] = useState<number | undefined>(undefined);
   const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(false);
+  const [produceKey, setProduceKey] = useState('');
+  const [produceValue, setProduceValue] = useState('');
+  const [produceLoading, setProduceLoading] = useState(false);
+  const [produceError, setProduceError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!name) return;
@@ -50,6 +54,28 @@ export default function TopicDetails() {
       setMessages(msgs);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleProduce() {
+    if (!name || selectedPartition === null) return;
+    setProduceError(null);
+    if (!produceValue.trim()) {
+      setProduceError('Value is required');
+      return;
+    }
+    setProduceLoading(true);
+    try {
+      await produceMessage(name, selectedPartition, {
+        key: produceKey.trim() || undefined,
+        value: produceValue,
+      });
+      setProduceValue('');
+      await loadMessages();
+    } catch (err) {
+      setProduceError((err as Error).message);
+    } finally {
+      setProduceLoading(false);
     }
   }
 
@@ -101,7 +127,7 @@ export default function TopicDetails() {
           <div>
             <h4 style={{ margin: 0 }}>Message browser</h4>
             <p className="muted" style={{ margin: 0 }}>
-              Pick a partition and offset to load recent messages (mock data for now)
+              Pick a partition and offset to load recent messages
             </p>
           </div>
           <button className="button" onClick={loadMessages} disabled={loading}>
@@ -152,6 +178,44 @@ export default function TopicDetails() {
         </div>
 
         <div className="section">
+          <h4 style={{ margin: '12px 0 6px' }}>Produce message</h4>
+          <div className="form-row">
+            <div className="form-field">
+              <label className="muted">Key (optional)</label>
+              <input
+                className="input"
+                value={produceKey}
+                onChange={(e) => setProduceKey(e.target.value)}
+                placeholder="sensor-1"
+              />
+            </div>
+            <div className="form-field" style={{ flex: 1, minWidth: 240 }}>
+              <label className="muted">Value</label>
+              <textarea
+                className="input"
+                style={{ minHeight: 80 }}
+                value={produceValue}
+                onChange={(e) => setProduceValue(e.target.value)}
+                placeholder='{"value": 42.0}'
+              />
+            </div>
+            <button
+              className="button"
+              onClick={handleProduce}
+              disabled={produceLoading}
+              style={{ alignSelf: 'flex-end' }}
+            >
+              {produceLoading ? 'Sending...' : 'Send'}
+            </button>
+          </div>
+          {produceError && (
+            <p className="muted" style={{ color: 'var(--danger)' }}>
+              {produceError}
+            </p>
+          )}
+        </div>
+
+        <div className="section">
           <h4 style={{ margin: '12px 0 6px' }}>
             Messages ({messages.length})
           </h4>
@@ -170,9 +234,7 @@ export default function TopicDetails() {
               <pre>{prettyPrint(msg.value)}</pre>
             </div>
           ))}
-          {!messages.length && (
-            <p className="muted">No data yet (mock values).</p>
-          )}
+          {!messages.length && <p className="muted">No data yet.</p>}
         </div>
       </div>
     </div>

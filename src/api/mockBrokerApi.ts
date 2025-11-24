@@ -168,3 +168,61 @@ export async function getMessages(
 export async function getConsumerGroups(): Promise<ConsumerGroup[]> {
   return consumerGroups;
 }
+
+export async function createTopic(payload: {
+  name: string;
+  partitions: number;
+  replicationFactor: number;
+}): Promise<TopicDetails> {
+  const exists = topics.find((t) => t.name === payload.name);
+  if (exists) throw new Error('Topic already exists');
+
+  const newTopic: Topic = {
+    name: payload.name,
+    partitions: payload.partitions,
+    replicationFactor: payload.replicationFactor,
+  };
+  topics.push(newTopic);
+  partitionsByTopic[payload.name] = Array.from(
+    { length: payload.partitions },
+    (_, idx) => ({
+      id: idx,
+      leader: 'wave-node-1',
+      highWatermark: 0,
+      startOffset: 0,
+    }),
+  );
+  messagesByTopic[payload.name] = [];
+  brokerSummary.topics = topics.length;
+  brokerSummary.partitions += payload.partitions;
+
+  return {
+    name: newTopic.name,
+    partitionCount: newTopic.partitions,
+    replicationFactor: newTopic.replicationFactor,
+    partitions: partitionsByTopic[payload.name],
+  };
+}
+
+export async function produceMessage(
+  topic: string,
+  partition: number,
+  data: { key?: string; value: string },
+): Promise<void> {
+  const parts = partitionsByTopic[topic];
+  if (!parts) throw new Error('Topic not found');
+  const partitionInfo = parts.find((p) => p.id === partition);
+  if (!partitionInfo) throw new Error('Partition not found');
+
+  const offset = partitionInfo.highWatermark + 1;
+  partitionInfo.highWatermark = offset;
+  const message: Message = {
+    partition,
+    offset,
+    key: data.key,
+    value: data.value,
+    timestamp: new Date().toISOString(),
+  };
+  messagesByTopic[topic] = [message, ...(messagesByTopic[topic] ?? [])];
+  brokerSummary.produced += 1;
+}

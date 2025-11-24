@@ -16,11 +16,19 @@ const useMocks =
   (import.meta.env.VITE_USE_MOCKS as string | undefined)?.toLowerCase() !== 'false';
 
 async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${baseURL}${path}`, init);
+  const res = await fetch(`${baseURL}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+    ...init,
+  });
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status} ${res.statusText}`);
   }
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 export async function fetchBrokerInfo(): Promise<BrokerInfo> {
@@ -68,4 +76,31 @@ export async function fetchMessages(
 export async function fetchConsumerGroups(): Promise<ConsumerGroup[]> {
   if (useMocks) return mock.getConsumerGroups();
   return requestJSON('/api/consumers');
+}
+
+export async function createTopic(payload: {
+  name: string;
+  partitions: number;
+  replicationFactor: number;
+}): Promise<TopicDetails | void> {
+  if (useMocks) return mock.createTopic(payload);
+  return requestJSON<TopicDetails | void>('/api/topics', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function produceMessage(
+  topic: string,
+  partition: number,
+  data: { key?: string; value: string },
+): Promise<void> {
+  if (useMocks) return mock.produceMessage(topic, partition, data);
+  await requestJSON<void>(
+    `/api/topics/${encodeURIComponent(topic)}/partitions/${partition}/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    },
+  );
 }
