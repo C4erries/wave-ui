@@ -6,6 +6,7 @@ import TopicDetails from './pages/TopicDetails';
 import ConsumerGroups from './pages/ConsumerGroups';
 import Metrics from './pages/Metrics';
 import DataAnalysis from './pages/DataAnalysis';
+import Cluster from './pages/Cluster';
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/cluster" element={<Cluster />} />
           <Route path="/topics" element={<Topics />} />
           <Route path="/topics/:name" element={<TopicDetails />} />
           <Route path="/consumers" element={<ConsumerGroups />} />

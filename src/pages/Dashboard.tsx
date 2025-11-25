@@ -2,15 +2,22 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import StatusPill from '@/components/StatusPill';
 import Card from '@/components/Card';
-import { fetchBrokerInfo, fetchBrokerSummary, fetchTopics } from '@/api/brokerApi';
-import type { BrokerInfo, BrokerSummary, Topic } from '@/types';
+import {
+  fetchBrokerInfo,
+  fetchBrokerSummary,
+  fetchControllerStatus,
+  fetchTopics,
+} from '@/api/brokerApi';
+import type { BrokerInfo, BrokerSummary, ControllerStatus, Topic } from '@/types';
 import { formatNumber } from '@/utils/format';
 
 export default function Dashboard() {
   const [info, setInfo] = useState<BrokerInfo | null>(null);
   const [summary, setSummary] = useState<BrokerSummary | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
+  const [controller, setController] = useState<ControllerStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const metricsURL =
     (import.meta.env.VITE_METRICS_URL as string | undefined) ??
@@ -19,14 +26,23 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const [infoResp, summaryResp, topicsResp] = await Promise.all([
+        const [infoResp, summaryResp, topicsResp, controllerResp] = await Promise.all([
           fetchBrokerInfo(),
           fetchBrokerSummary(),
           fetchTopics(),
+          fetchControllerStatus().catch((err) => {
+            console.warn('Controller status unavailable', err);
+            return null;
+          }),
         ]);
         setInfo(infoResp);
         setSummary(summaryResp);
         setTopics(topicsResp);
+        setController(controllerResp);
+        setLoadError(null);
+      } catch (err) {
+        console.error('Failed to load dashboard data', err);
+        setLoadError('Failed to load data');
       } finally {
         setLoading(false);
       }
@@ -35,10 +51,14 @@ export default function Dashboard() {
   }, []);
 
   if (loading) return <p className="muted">Loading...</p>;
+  if (loadError) return <p className="muted">Failed to load dashboard</p>;
 
   return (
     <div className="layout-grid" style={{ gap: 18 }}>
-      <div className="layout-grid two">
+      <div
+        className="layout-grid"
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 12 }}
+      >
         <Card
           title="Broker"
           subtitle={
@@ -47,6 +67,9 @@ export default function Dashboard() {
                 <div>Binary: {info.binaryEndpoint}</div>
                 <div>MQTT: {info.mqttEndpoint}</div>
                 <div>HTTP: {info.httpEndpoint}</div>
+                <div>
+                  Cluster: {info.clusterID ?? 'n/a'}; controller: {info.controllerMode ?? 'single'}
+                </div>
               </div>
             ) : (
               '-'
@@ -54,6 +77,30 @@ export default function Dashboard() {
           }
           value={info?.id ?? 'wave-node'}
           footer={<StatusPill status="up" label="Healthy" />}
+        />
+        <Card
+          title="Controller"
+          subtitle={
+            controller ? (
+              <span className="muted">
+                mode: {controller.mode}, state: {controller.raftState}, term: {controller.term}
+              </span>
+            ) : (
+              <span className="muted">Not available</span>
+            )
+          }
+          value={controller?.clusterID ?? info?.clusterID ?? info?.id ?? 'cluster'}
+          footer={
+            controller ? (
+              controller.peers && controller.peers.length ? (
+                <span className="tag">{controller.peers.length} peers</span>
+              ) : (
+                <span className="tag">single</span>
+              )
+            ) : (
+              <span className="tag">unknown</span>
+            )
+          }
         />
         <Card
           title="Health / Metrics"

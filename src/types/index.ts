@@ -3,6 +3,9 @@ export interface BrokerInfo {
   binaryEndpoint: string;
   mqttEndpoint: string;
   httpEndpoint: string;
+  clusterID?: string;
+  replicationFactor?: number;
+  controllerMode?: 'single' | 'raft' | string;
 }
 
 export interface BrokerSummary {
@@ -98,4 +101,41 @@ export interface MetricsSnapshot {
 export interface BrokerHealth {
   status: 'up' | 'down' | 'degraded';
   message?: string;
+}
+
+export interface ControllerPeer {
+  id: string;
+  address: string;
+}
+
+export interface ControllerStatus {
+  mode: 'single' | 'raft' | string;
+  raftState: 'leader' | 'follower' | 'candidate' | 'none' | string;
+  term: number;
+  peers?: ControllerPeer[] | null;
+  clusterID?: string;
+  version?: number;
+}
+
+export interface ClusterBrokerInfo {
+  brokerID: number;
+  host: string;
+  port: number;
+  rack: string;
+}
+
+export interface PartitionAssignment {
+  topic: string;
+  partition: number;
+  replicas?: number[] | null;
+  isr?: number[] | null;
+  leader: number;
+  leaderEpoch: number;
+}
+
+export interface ClusterMetadata {
+  clusterID: string;
+  version: number;
+  brokers: ClusterBrokerInfo[];
+  partitions: PartitionAssignment[];
 }

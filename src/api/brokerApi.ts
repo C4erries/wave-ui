@@ -1,7 +1,9 @@
 import type {
   BrokerInfo,
   BrokerSummary,
+  ClusterMetadata,
   ConsumerGroup,
+  ControllerStatus,
   Message,
   MessageQuery,
   Topic,
@@ -39,6 +41,16 @@ export async function fetchBrokerInfo(): Promise<BrokerInfo> {
 export async function fetchBrokerSummary(): Promise<BrokerSummary> {
   if (useMocks) return mock.getBrokerSummary();
   return requestJSON('/api/summary');
+}
+
+export async function fetchControllerStatus(): Promise<ControllerStatus> {
+  if (useMocks) return mock.getControllerStatus();
+  return requestJSON('/api/controller');
+}
+
+export async function fetchClusterMetadata(): Promise<ClusterMetadata> {
+  if (useMocks) return mock.getClusterMetadata();
+  return requestJSON('/api/cluster');
 }
 
 export async function fetchTopics(): Promise<Topic[]> {

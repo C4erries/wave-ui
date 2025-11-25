@@ -1,8 +1,10 @@
 import type {
   BrokerInfo,
   BrokerSummary,
+  ClusterMetadata,
   ConsumerGroup,
   ConsumerGroupPartition,
+  ControllerStatus,
   Message,
   MessageQuery,
   Partition,
@@ -61,6 +63,9 @@ const brokerInfo: BrokerInfo = {
   binaryEndpoint: 'tcp://localhost:7030',
   mqttEndpoint: 'mqtt://localhost:1883',
   httpEndpoint: 'http://localhost:8090',
+  clusterID: 'local-mock',
+  replicationFactor: 1,
+  controllerMode: 'single',
 };
 
 const brokerSummary: BrokerSummary = {
@@ -72,6 +77,26 @@ const brokerSummary: BrokerSummary = {
   produced: 125_430,
   consumed: 118_910,
   errors: 6,
+};
+
+const controllerStatus: ControllerStatus = {
+  mode: 'single',
+  raftState: 'none',
+  term: 0,
+  peers: [],
+  clusterID: 'local-mock',
+  version: 1,
+};
+
+const clusterMetadata: ClusterMetadata = {
+  clusterID: 'local-mock',
+  version: 1,
+  brokers: [{ brokerID: 1, host: 'localhost', port: 7030, rack: '' }],
+  partitions: [
+    { topic: 'telemetry', partition: 0, replicas: [1], isr: [1], leader: 1, leaderEpoch: 1 },
+    { topic: 'signals', partition: 0, replicas: [1], isr: [1], leader: 1, leaderEpoch: 1 },
+    { topic: 'orders', partition: 0, replicas: [1], isr: [1], leader: 1, leaderEpoch: 1 },
+  ],
 };
 
 function buildAssignments(
@@ -134,6 +159,14 @@ export async function getBrokerInfo(): Promise<BrokerInfo> {
 
 export async function getBrokerSummary(): Promise<BrokerSummary> {
   return brokerSummary;
+}
+
+export async function getControllerStatus(): Promise<ControllerStatus> {
+  return controllerStatus;
+}
+
+export async function getClusterMetadata(): Promise<ClusterMetadata> {
+  return clusterMetadata;
 }
 
 export async function getTopics(): Promise<Topic[]> {

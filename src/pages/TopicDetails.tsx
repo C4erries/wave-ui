@@ -120,6 +120,9 @@ export default function TopicDetails() {
             ))}
           </tbody>
         </table>
+        <p className="muted" style={{ marginTop: 6 }}>
+          Replica / ISR layout is shown on the <Link to="/cluster">Cluster</Link> page in raft mode.
+        </p>
       </div>
 
       <div className="card">
