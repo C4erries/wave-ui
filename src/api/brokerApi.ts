@@ -11,9 +11,8 @@ import type {
 } from '@/types';
 import * as mock from './mockBrokerApi';
 
-const baseURL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ??
-  '';
+const envApiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+const baseURL = envApiBase ? envApiBase.replace(/\/$/, '') : '';
 const useMocks =
   (import.meta.env.VITE_USE_MOCKS as string | undefined)?.toLowerCase() !== 'false';
 

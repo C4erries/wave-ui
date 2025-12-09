@@ -77,6 +77,10 @@
     @apply flex items-center justify-between mb-5;
   }
 
+  .topbar-meta {
+    @apply flex flex-wrap gap-2 mt-2;
+  }
+
   .page-title {
     @apply text-[28px] m-0;
   }
@@ -229,5 +233,11 @@
 
   .status-bad {
     @apply bg-[color:var(--danger)];
+  }
+
+  .experiment-banner {
+    @apply rounded-xl border px-3 py-2 text-[12px] text-[color:var(--muted)] mt-2;
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.15);
   }
 }

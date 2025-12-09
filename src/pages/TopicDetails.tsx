@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { fetchMessages, fetchTopicDetails, produceMessage } from '@/api/brokerApi';
-import type { Message, TopicDetails as TopicDetailsType } from '@/types';
+import {
+  fetchMessages,
+  fetchTopicDetails,
+  fetchClusterMetadata,
+  produceMessage,
+} from '@/api/brokerApi';
+import type {
+  ClusterMetadata,
+  Message,
+  PartitionAssignment,
+  TopicDetails as TopicDetailsType,
+} from '@/types';
 import { formatDate } from '@/utils/format';
 
 export default function TopicDetails() {
@@ -16,6 +26,7 @@ export default function TopicDetails() {
   const [produceValue, setProduceValue] = useState('');
   const [produceLoading, setProduceLoading] = useState(false);
   const [produceError, setProduceError] = useState<string | null>(null);
+  const [clusterMetadata, setClusterMetadata] = useState<ClusterMetadata | null>(null);
 
   useEffect(() => {
     if (!name) return;
@@ -37,6 +48,23 @@ export default function TopicDetails() {
     }
     load(name).catch(console.error);
   }, [name, limit]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadClusterMetadata() {
+      try {
+        const data = await fetchClusterMetadata();
+        if (!active) return;
+        setClusterMetadata(data);
+      } catch (err) {
+        console.warn('Cluster metadata unavailable', err);
+      }
+    }
+    loadClusterMetadata();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const partitions = details?.partitions ?? [];
   const prettyName = details?.name ?? name ?? 'topic';
@@ -84,6 +112,18 @@ export default function TopicDetails() {
     [partitions, selectedPartition],
   );
 
+  const assignmentMap = useMemo(() => {
+    if (!clusterMetadata || !details?.name) return {};
+    return clusterMetadata.partitions.reduce<Record<number, PartitionAssignment>>(
+      (acc, assignment) => {
+        if (assignment.topic !== details.name) return acc;
+        acc[assignment.partition] = assignment;
+        return acc;
+      },
+      {},
+    );
+  }, [clusterMetadata, details?.name]);
+
   return (
     <div className="layout-grid" style={{ gap: 16 }}>
       <div className="topbar" style={{ marginBottom: 0 }}>
@@ -105,23 +145,43 @@ export default function TopicDetails() {
             <tr>
               <th>ID</th>
               <th>Leader</th>
+              <th>Replicas</th>
+              <th>ISR</th>
               <th>HWM</th>
               <th>Start offset</th>
             </tr>
           </thead>
           <tbody>
-            {partitions.map((p) => (
-              <tr key={p.id}>
-                <td>{p.id}</td>
-                <td>{p.leader}</td>
-                <td>{p.highWatermark}</td>
-                <td>{p.startOffset}</td>
-              </tr>
-            ))}
+            {partitions.map((p) => {
+              const assignment = assignmentMap[p.id];
+              const replicas = assignment?.replicas ?? [];
+              const isr = assignment?.isr ?? [];
+              const isDegraded =
+                replicas.length > 0 && isr.length < replicas.length;
+              const leaderLabel = assignment?.leader ?? p.leader;
+              return (
+                <tr
+                  key={`${p.id}-${leaderLabel}`}
+                  style={
+                    isDegraded
+                      ? { backgroundColor: 'rgba(255, 196, 0, 0.08)' }
+                      : undefined
+                  }
+                >
+                  <td>{p.id}</td>
+                  <td>{leaderLabel}</td>
+                  <td>{formatList(replicas)}</td>
+                  <td>{formatList(isr)}</td>
+                  <td>{p.highWatermark}</td>
+                  <td>{p.startOffset}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         <p className="muted" style={{ marginTop: 6 }}>
-          Replica / ISR layout is shown on the <Link to="/cluster">Cluster</Link> page in raft mode.
+          Replica sets and ISR membership come from <code>/api/cluster</code>, so you can easily
+          check which brokers host each partition directly on this page.
         </p>
       </div>
 
@@ -250,4 +310,9 @@ function prettyPrint(value: string) {
   } catch {
     return value;
   }
+}
+
+function formatList(values: number[] | null | undefined) {
+  if (!values || !values.length) return '-';
+  return values.join(', ');
 }

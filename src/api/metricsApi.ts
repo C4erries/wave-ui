@@ -1,11 +1,9 @@
 import type { Histogram, HistogramBucket, LatencyPercentiles, MetricsSnapshot } from '@/types';
 
-const baseURL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ??
-  '';
-const metricsURL =
-  (import.meta.env.VITE_METRICS_URL as string | undefined) ??
-  `${baseURL}/metrics`;
+const envApiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+const baseURL = envApiBase ? envApiBase.replace(/\/$/, '') : '';
+const envMetrics = (import.meta.env.VITE_METRICS_URL as string | undefined)?.trim();
+const metricsURL = envMetrics || `${baseURL}/metrics`;
 
 const METRIC_REGEX =
   /^(?<name>[a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(?<labels>[^}]*)\})?\s+(?<value>[-+]?[0-9]*\\.?[0-9]+(?:[eE][-+]?\\d+)?)/;
