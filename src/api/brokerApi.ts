@@ -75,13 +75,16 @@ export async function fetchMessages(
 ): Promise<Message[]> {
   if (useMocks) return mock.getMessages(topic, query);
 
-  const partition = query.partition ?? 0;
   const params = new URLSearchParams();
   if (query.offset !== undefined) params.set('offset', String(query.offset));
   if (query.limit !== undefined) params.set('limit', String(query.limit));
 
+  const suffix =
+    query.partition === undefined
+      ? `/messages`
+      : `/partitions/${query.partition}/messages`;
   const data = await requestJSON<Message[] | undefined>(
-    `/api/topics/${encodeURIComponent(topic)}/partitions/${partition}/messages?${params.toString()}`,
+    `/api/topics/${encodeURIComponent(topic)}${suffix}?${params.toString()}`,
   );
   return data ?? [];
 }
@@ -106,12 +109,16 @@ export async function createTopic(payload: {
 
 export async function produceMessage(
   topic: string,
-  partition: number,
   data: { key?: string; value: string },
+  partition?: number,
 ): Promise<void> {
-  if (useMocks) return mock.produceMessage(topic, partition, data);
+  if (useMocks) return mock.produceMessage(topic, data, partition);
+  const suffix =
+    partition === undefined
+      ? `/messages`
+      : `/partitions/${partition}/messages`;
   await requestJSON<void>(
-    `/api/topics/${encodeURIComponent(topic)}/partitions/${partition}/messages`,
+    `/api/topics/${encodeURIComponent(topic)}${suffix}`,
     {
       method: 'POST',
       body: JSON.stringify(data),

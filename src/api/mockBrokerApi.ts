@@ -239,18 +239,27 @@ export async function createTopic(payload: {
 
 export async function produceMessage(
   topic: string,
-  partition: number,
   data: { key?: string; value: string },
+  partition?: number,
 ): Promise<void> {
   const parts = partitionsByTopic[topic];
   if (!parts) throw new Error('Topic not found');
-  const partitionInfo = parts.find((p) => p.id === partition);
+
+  let targetPartition = partition;
+  if (targetPartition === undefined) {
+    const key = (data.key ?? '').trim();
+    if (!key) throw new Error('Key is required for hash routing');
+    const idx = hashKeyToIndex(key, parts.length);
+    targetPartition = parts[idx]?.id;
+  }
+
+  const partitionInfo = parts.find((p) => p.id === targetPartition);
   if (!partitionInfo) throw new Error('Partition not found');
 
   const offset = partitionInfo.highWatermark + 1;
   partitionInfo.highWatermark = offset;
   const message: Message = {
-    partition,
+    partition: targetPartition,
     offset,
     key: data.key,
     value: data.value,
@@ -258,4 +267,13 @@ export async function produceMessage(
   };
   messagesByTopic[topic] = [message, ...(messagesByTopic[topic] ?? [])];
   brokerSummary.produced += 1;
+}
+
+function hashKeyToIndex(key: string, modulo: number): number {
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash >>> 0) % modulo;
 }

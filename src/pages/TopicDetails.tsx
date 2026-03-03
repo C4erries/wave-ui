@@ -86,16 +86,20 @@ export default function TopicDetails() {
   }
 
   async function handleProduce() {
-    if (!name || selectedPartition === null) return;
+    if (!name) return;
     setProduceError(null);
     if (!produceValue.trim()) {
       setProduceError('Value is required');
       return;
     }
+    if (!produceKey.trim()) {
+      setProduceError('Key is required for hash routing');
+      return;
+    }
     setProduceLoading(true);
     try {
-      await produceMessage(name, selectedPartition, {
-        key: produceKey.trim() || undefined,
+      await produceMessage(name, {
+        key: produceKey.trim(),
         value: produceValue,
       });
       setProduceValue('');
@@ -244,7 +248,7 @@ export default function TopicDetails() {
           <h4 style={{ margin: '12px 0 6px' }}>Produce message</h4>
           <div className="form-row">
             <div className="form-field">
-              <label className="muted">Key (optional)</label>
+              <label className="muted">Key (required)</label>
               <input
                 className="input"
                 value={produceKey}
