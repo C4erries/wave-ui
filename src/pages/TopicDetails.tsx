@@ -10,6 +10,7 @@ import type {
   ClusterMetadata,
   Message,
   PartitionAssignment,
+  ProduceResult,
   TopicDetails as TopicDetailsType,
 } from '@/types';
 import { formatDate } from '@/utils/format';
@@ -26,6 +27,7 @@ export default function TopicDetails() {
   const [produceValue, setProduceValue] = useState('');
   const [produceLoading, setProduceLoading] = useState(false);
   const [produceError, setProduceError] = useState<string | null>(null);
+  const [produceResult, setProduceResult] = useState<ProduceResult | null>(null);
   const [clusterMetadata, setClusterMetadata] = useState<ClusterMetadata | null>(null);
 
   useEffect(() => {
@@ -88,6 +90,7 @@ export default function TopicDetails() {
   async function handleProduce() {
     if (!name) return;
     setProduceError(null);
+    setProduceResult(null);
     if (!produceValue.trim()) {
       setProduceError('Value is required');
       return;
@@ -98,10 +101,11 @@ export default function TopicDetails() {
     }
     setProduceLoading(true);
     try {
-      await produceMessage(name, {
+      const result = await produceMessage(name, {
         key: produceKey.trim(),
         value: produceValue,
       });
+      setProduceResult(result);
       setProduceValue('');
       await loadMessages();
     } catch (err) {
@@ -246,6 +250,9 @@ export default function TopicDetails() {
 
         <div className="section">
           <h4 style={{ margin: '12px 0 6px' }}>Produce message</h4>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Partition is selected automatically by key hash.
+          </p>
           <div className="form-row">
             <div className="form-field">
               <label className="muted">Key (required)</label>
@@ -278,6 +285,11 @@ export default function TopicDetails() {
           {produceError && (
             <p className="muted" style={{ color: 'var(--danger)' }}>
               {produceError}
+            </p>
+          )}
+          {produceResult && (
+            <p className="muted" style={{ color: 'var(--accent)' }}>
+              Sent to partition {produceResult.partition}, base offset {produceResult.baseOffset}.
             </p>
           )}
         </div>

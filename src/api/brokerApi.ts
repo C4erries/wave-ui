@@ -1,5 +1,6 @@
 import type {
   BrokerInfo,
+  ProduceResult,
   BrokerSummary,
   ClusterMetadata,
   ConsumerGroup,
@@ -110,15 +111,10 @@ export async function createTopic(payload: {
 export async function produceMessage(
   topic: string,
   data: { key?: string; value: string },
-  partition?: number,
-): Promise<void> {
-  if (useMocks) return mock.produceMessage(topic, data, partition);
-  const suffix =
-    partition === undefined
-      ? `/messages`
-      : `/partitions/${partition}/messages`;
-  await requestJSON<void>(
-    `/api/topics/${encodeURIComponent(topic)}${suffix}`,
+): Promise<ProduceResult> {
+  if (useMocks) return mock.produceMessage(topic, data);
+  return requestJSON<ProduceResult>(
+    `/api/topics/${encodeURIComponent(topic)}/messages`,
     {
       method: 'POST',
       body: JSON.stringify(data),

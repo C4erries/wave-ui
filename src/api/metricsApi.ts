@@ -39,45 +39,56 @@ export function parseMetrics(text: string): MetricsSnapshot {
     const labels = parseLabels(labelsStr);
 
     switch (name) {
-      case 'messages_produced_total': {
-        producedTotal[labels.topic ?? 'total'] = value;
+      case 'messages_produced_total':
+      case 'wavemq_messages_produced_total': {
+        const topic = labels.topic ?? 'total';
+        producedTotal[topic] = (producedTotal[topic] ?? 0) + value;
         break;
       }
-      case 'messages_consumed_total': {
-        consumedTotal[labels.topic ?? 'total'] = value;
+      case 'messages_consumed_total':
+      case 'wavemq_messages_consumed_total': {
+        const topic = labels.topic ?? 'total';
+        consumedTotal[topic] = (consumedTotal[topic] ?? 0) + value;
         break;
       }
-      case 'request_errors_total': {
-        requestErrorsTotal = value;
+      case 'request_errors_total':
+      case 'wavemq_request_errors_total': {
+        requestErrorsTotal += value;
         break;
       }
-      case 'produce_latency_seconds_bucket': {
+      case 'produce_latency_seconds_bucket':
+      case 'wavemq_produce_latency_seconds_bucket': {
         produceBuckets.push({
           le: bucketBound(labels.le),
           count: value,
         });
         break;
       }
-      case 'produce_latency_seconds_count': {
+      case 'produce_latency_seconds_count':
+      case 'wavemq_produce_latency_seconds_count': {
         produceCount = value;
         break;
       }
-      case 'produce_latency_seconds_sum': {
+      case 'produce_latency_seconds_sum':
+      case 'wavemq_produce_latency_seconds_sum': {
         produceSum = value;
         break;
       }
-      case 'fetch_latency_seconds_bucket': {
+      case 'fetch_latency_seconds_bucket':
+      case 'wavemq_fetch_latency_seconds_bucket': {
         fetchBuckets.push({
           le: bucketBound(labels.le),
           count: value,
         });
         break;
       }
-      case 'fetch_latency_seconds_count': {
+      case 'fetch_latency_seconds_count':
+      case 'wavemq_fetch_latency_seconds_count': {
         fetchCount = value;
         break;
       }
-      case 'fetch_latency_seconds_sum': {
+      case 'fetch_latency_seconds_sum':
+      case 'wavemq_fetch_latency_seconds_sum': {
         fetchSum = value;
         break;
       }

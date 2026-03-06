@@ -97,17 +97,17 @@ export default function Metrics() {
     <div className="layout-grid" style={{ gap: 16 }}>
       <div className="layout-grid three">
         <Card
-          title="messages_produced_total"
+          title="wavemq_messages_produced_total"
           value={formatNumber(total(snapshot.producedTotal))}
           subtitle="Cumulative per topic"
         />
         <Card
-          title="messages_consumed_total"
+          title="wavemq_messages_consumed_total"
           value={formatNumber(total(snapshot.consumedTotal))}
           subtitle="Cumulative per topic"
         />
         <Card
-          title="request_errors_total"
+          title="wavemq_request_errors_total"
           value={snapshot.requestErrorsTotal}
           subtitle="Errors since start"
         />

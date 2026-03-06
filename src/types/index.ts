@@ -1,5 +1,5 @@
 export interface BrokerInfo {
-  id: string;
+  id: number;
   binaryEndpoint: string;
   mqttEndpoint: string;
   httpEndpoint: string;
@@ -24,7 +24,7 @@ export interface Topic {
 
 export interface Partition {
   id: number;
-  leader: string;
+  leader: number;
   highWatermark: number;
   startOffset: number;
 }
@@ -42,6 +42,11 @@ export interface Message {
   key?: string;
   value: string;
   timestamp: string;
+}
+
+export interface ProduceResult {
+  partition: number;
+  baseOffset: number;
 }
 
 export interface MessageQuery {

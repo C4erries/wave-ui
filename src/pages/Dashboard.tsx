@@ -196,17 +196,17 @@ export default function Dashboard() {
         <Card
           title="Messages produced"
           value={summary ? formatNumber(summary.produced) : '-'}
-          subtitle="messages_produced_total"
+          subtitle="wavemq_messages_produced_total"
         />
         <Card
           title="Messages consumed"
           value={summary ? formatNumber(summary.consumed) : '-'}
-          subtitle="messages_consumed_total"
+          subtitle="wavemq_messages_consumed_total"
         />
         <Card
           title="Request errors"
           value={summary ? summary.errors : '-'}
-          subtitle="request_errors_total"
+          subtitle="wavemq_request_errors_total"
         />
       </div>
 
@@ -301,7 +301,7 @@ export default function Dashboard() {
                 {formatNumber(total(metricsSnapshot.producedTotal))}
               </div>
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                messages_produced_total
+                wavemq_messages_produced_total
               </p>
             </div>
             <div className="stat-item">
@@ -310,14 +310,14 @@ export default function Dashboard() {
                 {formatNumber(total(metricsSnapshot.consumedTotal))}
               </div>
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                messages_consumed_total
+                wavemq_messages_consumed_total
               </p>
             </div>
             <div className="stat-item">
               <div className="label">Request errors</div>
               <div className="value">{metricsSnapshot.requestErrorsTotal}</div>
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                request_errors_total
+                wavemq_request_errors_total
               </p>
             </div>
           </div>

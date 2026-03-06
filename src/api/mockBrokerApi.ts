@@ -8,6 +8,7 @@ import type {
   Message,
   MessageQuery,
   Partition,
+  ProduceResult,
   Topic,
   TopicDetails,
 } from '@/types';
@@ -21,21 +22,21 @@ const topics: Topic[] = [
 
 const partitionsByTopic: Record<string, Partition[]> = {
   telemetry: [
-    { id: 0, leader: 'wave-node-1', highWatermark: 4200, startOffset: 0 },
-    { id: 1, leader: 'wave-node-1', highWatermark: 4150, startOffset: 0 },
-    { id: 2, leader: 'wave-node-1', highWatermark: 4100, startOffset: 0 },
+    { id: 0, leader: 1, highWatermark: 4200, startOffset: 0 },
+    { id: 1, leader: 1, highWatermark: 4150, startOffset: 0 },
+    { id: 2, leader: 1, highWatermark: 4100, startOffset: 0 },
   ],
   signals: [
-    { id: 0, leader: 'wave-node-1', highWatermark: 980, startOffset: 0 },
-    { id: 1, leader: 'wave-node-1', highWatermark: 965, startOffset: 0 },
+    { id: 0, leader: 1, highWatermark: 980, startOffset: 0 },
+    { id: 1, leader: 1, highWatermark: 965, startOffset: 0 },
   ],
   orders: [
-    { id: 0, leader: 'wave-node-1', highWatermark: 2100, startOffset: 0 },
-    { id: 1, leader: 'wave-node-1', highWatermark: 2080, startOffset: 0 },
-    { id: 2, leader: 'wave-node-1', highWatermark: 2050, startOffset: 0 },
-    { id: 3, leader: 'wave-node-1', highWatermark: 2040, startOffset: 0 },
+    { id: 0, leader: 1, highWatermark: 2100, startOffset: 0 },
+    { id: 1, leader: 1, highWatermark: 2080, startOffset: 0 },
+    { id: 2, leader: 1, highWatermark: 2050, startOffset: 0 },
+    { id: 3, leader: 1, highWatermark: 2040, startOffset: 0 },
   ],
-  metrics: [{ id: 0, leader: 'wave-node-1', highWatermark: 320, startOffset: 0 }],
+  metrics: [{ id: 0, leader: 1, highWatermark: 320, startOffset: 0 }],
 };
 
 const messagesByTopic: Record<string, Message[]> = buildMessageStore();
@@ -59,7 +60,7 @@ const consumerGroups: ConsumerGroup[] = [
 ];
 
 const brokerInfo: BrokerInfo = {
-  id: 'wave-node-1',
+  id: 1,
   binaryEndpoint: 'tcp://localhost:7030',
   mqttEndpoint: 'mqtt://localhost:1883',
   httpEndpoint: 'http://localhost:8090',
@@ -220,7 +221,7 @@ export async function createTopic(payload: {
     { length: payload.partitions },
     (_, idx) => ({
       id: idx,
-      leader: 'wave-node-1',
+      leader: 1,
       highWatermark: 0,
       startOffset: 0,
     }),
@@ -240,33 +241,35 @@ export async function createTopic(payload: {
 export async function produceMessage(
   topic: string,
   data: { key?: string; value: string },
-  partition?: number,
-): Promise<void> {
+): Promise<ProduceResult> {
   const parts = partitionsByTopic[topic];
   if (!parts) throw new Error('Topic not found');
 
-  let targetPartition = partition;
-  if (targetPartition === undefined) {
-    const key = (data.key ?? '').trim();
-    if (!key) throw new Error('Key is required for hash routing');
-    const idx = hashKeyToIndex(key, parts.length);
-    targetPartition = parts[idx]?.id;
-  }
+  const key = (data.key ?? '').trim();
+  if (!key) throw new Error('Key is required for hash routing');
+
+  const idx = hashKeyToIndex(key, parts.length);
+  const targetPartition = parts[idx]?.id;
 
   const partitionInfo = parts.find((p) => p.id === targetPartition);
   if (!partitionInfo) throw new Error('Partition not found');
 
-  const offset = partitionInfo.highWatermark + 1;
-  partitionInfo.highWatermark = offset;
+  const baseOffset = partitionInfo.highWatermark + 1;
+  partitionInfo.highWatermark = baseOffset;
   const message: Message = {
     partition: targetPartition,
-    offset,
-    key: data.key,
+    offset: baseOffset,
+    key,
     value: data.value,
     timestamp: new Date().toISOString(),
   };
   messagesByTopic[topic] = [message, ...(messagesByTopic[topic] ?? [])];
   brokerSummary.produced += 1;
+
+  return {
+    partition: targetPartition,
+    baseOffset,
+  };
 }
 
 function hashKeyToIndex(key: string, modulo: number): number {
