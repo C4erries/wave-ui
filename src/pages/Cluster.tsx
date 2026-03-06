@@ -25,7 +25,7 @@ export default function Cluster() {
         ]);
         setController(controllerResp);
         setMetadata(metadataResp);
-        setMetaError(metadataResp ? null : 'Cluster metadata not available (single mode or old backend)');
+        setMetaError(metadataResp ? null : 'Cluster metadata unavailable');
       } finally {
         setLoading(false);
       }

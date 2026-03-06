@@ -173,7 +173,7 @@ export default function DataAnalysis() {
           </div>
         ))}
         {!messages.length && (
-          <p className="muted">Messages are not loaded yet (mock data).</p>
+          <p className="muted">No messages loaded yet.</p>
         )}
       </div>
     </div>

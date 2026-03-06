@@ -59,9 +59,6 @@ export default function Topbar() {
     };
   }, []);
 
-  const useMocks =
-    (import.meta.env.VITE_USE_MOCKS as string | undefined)?.toLowerCase() !==
-    'false';
   const controllerMode =
     controller?.mode ?? brokerInfo?.controllerMode ?? 'single';
   const raftState = controller?.raftState ?? 'unknown';
@@ -81,7 +78,7 @@ export default function Topbar() {
         <div>
           <p className="page-title">{title}</p>
           <p className="muted" style={{ margin: 0 }}>
-            Wave MQ control plane - single node prototype
+            Wave MQ control plane
           </p>
           <div className="topbar-meta">
             <span className="tag">Mode: {controllerMode}</span>
@@ -95,15 +92,12 @@ export default function Topbar() {
         </div>
         <div className="actions">
           <span className="pill">{apiBaseLabel}</span>
-          <span className={`pill ${useMocks ? '' : 'success'}`}>
-            {useMocks ? 'Mock data' : 'Live API'}
-          </span>
+          <span className="pill success">Live API</span>
         </div>
       </div>
       {showExperimentBanner && (
         <div className="experiment-banner">
-          Raft mode with RF&gt;1 is experimental and intended for demos only; it does not
-          guarantee production reliability.
+          Raft mode with RF&gt;1 is active.
         </div>
       )}
     </>
