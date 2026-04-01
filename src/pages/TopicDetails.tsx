@@ -31,6 +31,7 @@ export default function TopicDetails() {
   const [produceMode, setProduceMode] = useState<ProduceMode>('partition');
   const [produceKey, setProduceKey] = useState('');
   const [produceValue, setProduceValue] = useState('');
+  const [produceContentType, setProduceContentType] = useState('');
   const [produceLoading, setProduceLoading] = useState(false);
   const [produceError, setProduceError] = useState<string | null>(null);
   const [produceResult, setProduceResult] = useState<ProduceResult | null>(null);
@@ -144,6 +145,7 @@ export default function TopicDetails() {
       const payload = {
         key: produceKey.trim() || undefined,
         value: produceValue,
+        contentType: produceContentType.trim() || undefined,
       };
       const result =
         produceMode === 'partition' && selectedPartition !== null
@@ -304,7 +306,7 @@ export default function TopicDetails() {
         <div className="section">
           <h4 style={{ margin: '12px 0 6px' }}>Produce message</h4>
           <p className="muted" style={{ marginTop: 0 }}>
-            For preview, you can publish directly into the selected partition or let broker key-hash routing choose it.
+            For preview, you can publish directly into the selected partition or let broker key-hash routing choose it. Add an optional content type if you want typed rendering in the UI.
           </p>
           <div className="form-row">
             <div className="form-field">
@@ -339,6 +341,15 @@ export default function TopicDetails() {
                 placeholder='{"value": 42.0}'
               />
             </div>
+            <div className="form-field">
+              <label className="muted">Content type</label>
+              <input
+                className="input"
+                value={produceContentType}
+                onChange={(e) => setProduceContentType(e.target.value)}
+                placeholder="application/json"
+              />
+            </div>
             <button
               className="button"
               onClick={handleProduce}
@@ -369,7 +380,7 @@ export default function TopicDetails() {
           )}
           {messages.length ? (
             messages.map((msg) => {
-              const payload = inspectPayload(msg.value);
+              const payload = inspectPayload(msg.value, msg.contentType);
               return (
                 <div key={`${msg.partition}-${msg.offset}`} className="message">
                   <div className="meta">
@@ -401,6 +412,7 @@ type TopicDetailsMessage = {
   key?: string;
   value: string;
   timestamp: string;
+  contentType?: string;
 };
 
 function formatList(values: number[] | null | undefined) {

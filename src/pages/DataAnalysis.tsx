@@ -87,7 +87,7 @@ export default function DataAnalysis() {
           <div>
             <h3 style={{ margin: 0 }}>Data analysis</h3>
             <p className="muted" style={{ margin: 0 }}>
-              Text/JSON numeric payloads are supported directly. Binary payloads are analyzed when the broker returns them as <code>base64:</code> and they decode to float64.
+              Typed payloads are rendered from <code>contentType</code> when available. JSON and text types are shown directly, and binary types such as float64 are decoded when the broker labels them or falls back to <code>base64:</code>.
             </p>
           </div>
           <button className="button" onClick={() => void loadData()} disabled={loading}>
@@ -168,6 +168,7 @@ export default function DataAnalysis() {
             <span className="tag">plain number</span>
             <span className="tag">JSON number</span>
             <span className="tag">{'{ "value": n }'}</span>
+            <span className="tag">content-type aware</span>
             <span className="tag">base64 float64</span>
           </div>
         </div>
@@ -197,7 +198,7 @@ export default function DataAnalysis() {
       ) : (
         <div className="card">
           <p className="muted">
-            No numeric payloads detected yet. Load topic data and use plain numbers, JSON numeric fields, or base64 float64 payloads.
+            No numeric payloads detected yet. Load topic data and use plain numbers, JSON numeric fields, base64 float64 payloads, or typed messages with <code>contentType</code>.
           </p>
         </div>
       )}
@@ -205,7 +206,7 @@ export default function DataAnalysis() {
       <div className="card">
         <h4 style={{ margin: '0 0 8px' }}>Messages</h4>
         {messages.map((msg) => {
-          const payload = inspectPayload(msg.value);
+          const payload = inspectPayload(msg.value, msg.contentType);
           return (
             <div key={`${msg.partition}-${msg.offset}`} className="message">
               <div className="meta">
@@ -231,9 +232,9 @@ export default function DataAnalysis() {
 function extractNumeric(messages: Message[]): NumericMessage[] {
   const numeric: NumericMessage[] = [];
   messages.forEach((msg) => {
-    const value = parseNumericPayload(msg.value);
+    const value = parseNumericPayload(msg.value, msg.contentType);
     if (value === null) return;
-    const info = inspectPayload(msg.value);
+    const info = inspectPayload(msg.value, msg.contentType);
     numeric.push({ message: msg, value, kind: info.kind });
   });
   return numeric;

@@ -42,6 +42,7 @@ export interface Message {
   key?: string;
   value: string;
   timestamp: string;
+  contentType?: string;
 }
 
 export interface ProduceResult {

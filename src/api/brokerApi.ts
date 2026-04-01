@@ -114,7 +114,7 @@ export async function createTopic(payload: {
 
 export async function produceMessage(
   topic: string,
-  data: { key?: string; value: string },
+  data: { key?: string; value: string; contentType?: string },
 ): Promise<ProduceResult> {
   return requestJSON<ProduceResult>(
     `/api/topics/${encodeURIComponent(topic)}/messages`,
@@ -128,7 +128,7 @@ export async function produceMessage(
 export async function produceMessageToPartition(
   topic: string,
   partition: number,
-  data: { key?: string; value: string },
+  data: { key?: string; value: string; contentType?: string },
 ): Promise<ProduceResult> {
   return requestJSON<ProduceResult>(
     `/api/topics/${encodeURIComponent(topic)}/partitions/${partition}/messages`,

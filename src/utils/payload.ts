@@ -3,12 +3,111 @@ export interface PayloadInfo {
   display: string;
   badges: string[];
   numericValue: number | null;
+  contentType?: string;
   byteLength?: number;
 }
 
 const BASE64_PREFIX = 'base64:';
 
-export function inspectPayload(raw: string): PayloadInfo {
+export function inspectPayload(raw: string, contentType?: string | null): PayloadInfo {
+  const normalizedType = normalizeContentType(contentType);
+  if (normalizedType) {
+    return inspectTypedPayload(raw, normalizedType);
+  }
+
+  return inspectLegacyPayload(raw);
+}
+
+export function prettyPayload(raw: string, contentType?: string | null): string {
+  return inspectPayload(raw, contentType).display;
+}
+
+export function parseNumericPayload(raw: string, contentType?: string | null): number | null {
+  return inspectPayload(raw, contentType).numericValue;
+}
+
+function tryParseJSON(raw: string): unknown | null {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function inspectTypedPayload(raw: string, contentType: string): PayloadInfo {
+  const badges = [`content-type: ${contentType}`];
+
+  if (isJsonContentType(contentType)) {
+    const text = decodeTextPayload(raw);
+    const parsedJson = tryParseJSON(text);
+    if (parsedJson !== null) {
+      const numericValue = extractNumericFromJSON(parsedJson);
+      return {
+        kind: typeof parsedJson === 'number' ? 'number' : 'json',
+        display: JSON.stringify(parsedJson, null, 2),
+        badges: typeof parsedJson === 'number' ? [...badges, 'json', 'number'] : [...badges, 'json'],
+        numericValue,
+        contentType,
+      };
+    }
+
+    return {
+      kind: 'text',
+      display: text,
+      badges: [...badges, 'json', 'text'],
+      numericValue: null,
+      contentType,
+    };
+  }
+
+  if (isTextContentType(contentType)) {
+    const text = decodeTextPayload(raw);
+    return {
+      kind: 'text',
+      display: text,
+      badges: [...badges, 'text'],
+      numericValue: null,
+      contentType,
+    };
+  }
+
+  const bytes = decodePayloadBytes(raw);
+  if (contentType === 'application/x.float64') {
+    const float64 = decodeFloat64(bytes);
+    if (float64 !== null) {
+      return {
+        kind: 'float64',
+        display: `${float64}\n\nhex: ${bytesToHex(bytes)}`,
+        badges: [...badges, 'binary', 'float64', `bytes:${bytes.length}`],
+        numericValue: float64,
+        byteLength: bytes.length,
+        contentType,
+      };
+    }
+  }
+
+  const legacyBinary = decodeBase64Payload(raw);
+  if (legacyBinary) {
+    return {
+      kind: 'binary',
+      display: bytesToHex(legacyBinary.bytes),
+      badges: [...badges, 'base64', `bytes:${legacyBinary.bytes.length}`],
+      numericValue: null,
+      byteLength: legacyBinary.bytes.length,
+      contentType,
+    };
+  }
+
+  return {
+    kind: 'text',
+    display: decodeTextPayload(raw),
+    badges: [...badges, 'text'],
+    numericValue: null,
+    contentType,
+  };
+}
+
+function inspectLegacyPayload(raw: string): PayloadInfo {
   const parsedJson = tryParseJSON(raw);
   if (parsedJson !== null) {
     const numericValue = extractNumericFromJSON(parsedJson);
@@ -62,20 +161,21 @@ export function inspectPayload(raw: string): PayloadInfo {
   };
 }
 
-export function prettyPayload(raw: string): string {
-  return inspectPayload(raw).display;
-}
-
-export function parseNumericPayload(raw: string): number | null {
-  return inspectPayload(raw).numericValue;
-}
-
-function tryParseJSON(raw: string): unknown | null {
-  try {
-    return JSON.parse(raw);
-  } catch {
+function normalizeContentType(contentType?: string | null): string | null {
+  const value = contentType?.trim().toLowerCase() ?? '';
+  if (!value) {
     return null;
   }
+
+  return value.split(';', 1)[0].trim() || null;
+}
+
+function isJsonContentType(contentType: string): boolean {
+  return contentType === 'application/json' || contentType.endsWith('+json');
+}
+
+function isTextContentType(contentType: string): boolean {
+  return contentType.startsWith('text/');
 }
 
 function extractNumericFromJSON(value: unknown): number | null {
@@ -111,6 +211,24 @@ function decodeBase64Payload(raw: string): { bytes: Uint8Array } | null {
   } catch {
     return null;
   }
+}
+
+function decodeTextPayload(raw: string): string {
+  const binary = decodeBase64Payload(raw);
+  if (binary) {
+    return new TextDecoder('utf-8', { fatal: false }).decode(binary.bytes);
+  }
+
+  return raw;
+}
+
+function decodePayloadBytes(raw: string): Uint8Array {
+  const binary = decodeBase64Payload(raw);
+  if (binary) {
+    return binary.bytes;
+  }
+
+  return new TextEncoder().encode(raw);
 }
 
 function decodeFloat64(bytes: Uint8Array): number | null {
