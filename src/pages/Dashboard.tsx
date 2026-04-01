@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import StatusPill from '@/components/StatusPill';
 import Card from '@/components/Card';
@@ -19,7 +19,8 @@ import type {
   MetricsSnapshot,
   LatencyPercentiles,
 } from '@/types';
-import { formatLatency, formatNumber } from '@/utils/format';
+import { resolveEndpointDisplay } from '@/utils/endpoints';
+import { formatDate, formatLatency, formatNumber } from '@/utils/format';
 
 export default function Dashboard() {
   const [info, setInfo] = useState<BrokerInfo | null>(null);
@@ -29,69 +30,71 @@ export default function Dashboard() {
   const [metadata, setMetadata] = useState<ClusterMetadata | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+
   const [metricsSnapshot, setMetricsSnapshot] = useState<MetricsSnapshot | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
   const [metricsError, setMetricsError] = useState<string | null>(null);
 
   const envApiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
   const envMetrics = (import.meta.env.VITE_METRICS_URL as string | undefined)?.trim();
-  const baseLabel = envApiBase ? envApiBase.replace(/\/$/, '') : '';
-  const metricsURL = envMetrics || `${baseLabel}/metrics`;
+  const baseLabel = envApiBase ? envApiBase.replace(/\/$/, '') : 'relative /api';
+  const metricsURL = envMetrics || `${envApiBase ? baseLabel : ''}/metrics`;
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [infoResp, summaryResp, topicsResp, controllerResp, metadataResp] =
-          await Promise.all([
-            fetchBrokerInfo(),
-            fetchBrokerSummary(),
-            fetchTopics(),
-            fetchControllerStatus().catch((err) => {
-              console.warn('Controller status unavailable', err);
-              return null;
-            }),
-            fetchClusterMetadata().catch((err) => {
-              console.warn('Cluster metadata unavailable', err);
-              return null;
-            }),
-          ]);
-        setInfo(infoResp);
-        setSummary(summaryResp);
-        setTopics(topicsResp);
-        setController(controllerResp);
-        setMetadata(metadataResp);
-        setLoadError(null);
-      } catch (err) {
-        console.error('Failed to load dashboard data', err);
-        setLoadError('Failed to load data');
-      } finally {
-        setLoading(false);
-      }
+  const loadDashboard = useCallback(async () => {
+    try {
+      const [infoResp, summaryResp, topicsResp, controllerResp, metadataResp] =
+        await Promise.all([
+          fetchBrokerInfo(),
+          fetchBrokerSummary(),
+          fetchTopics(),
+          fetchControllerStatus().catch((err) => {
+            console.warn('Controller status unavailable', err);
+            return null;
+          }),
+          fetchClusterMetadata().catch((err) => {
+            console.warn('Cluster metadata unavailable', err);
+            return null;
+          }),
+        ]);
+      setInfo(infoResp);
+      setSummary(summaryResp);
+      setTopics(topicsResp);
+      setController(controllerResp);
+      setMetadata(metadataResp);
+      setLoadError(null);
+      setLastUpdated(Date.now());
+    } catch (err) {
+      console.error('Failed to load dashboard data', err);
+      setLoadError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
-    load();
+  }, []);
+
+  const loadMetricsSnapshot = useCallback(async () => {
+    try {
+      const data = await fetchMetrics();
+      setMetricsSnapshot(data);
+      setMetricsError(null);
+    } catch (err) {
+      setMetricsError((err as Error).message);
+    } finally {
+      setMetricsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    let active = true;
-    async function loadMetrics() {
-      try {
-        const data = await fetchMetrics();
-        if (!active) return;
-        setMetricsSnapshot(data);
-        setMetricsError(null);
-      } catch (err) {
-        if (!active) return;
-        setMetricsError((err as Error).message);
-      }
-    }
+    loadDashboard();
+    const id = window.setInterval(loadDashboard, 10_000);
+    return () => window.clearInterval(id);
+  }, [loadDashboard]);
 
-    loadMetrics();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (loading) return <p className="muted">Loading...</p>;
-  if (loadError) return <p className="muted">Failed to load dashboard</p>;
+  useEffect(() => {
+    loadMetricsSnapshot();
+    const id = window.setInterval(loadMetricsSnapshot, 5_000);
+    return () => window.clearInterval(id);
+  }, [loadMetricsSnapshot]);
 
   const partitions = metadata?.partitions ?? [];
   const topicCount = partitions.length
@@ -100,28 +103,16 @@ export default function Dashboard() {
   const leaderIds = Array.from(new Set(partitions.map((p) => p.leader))).sort(
     (a, b) => a - b,
   );
-  const leaderCount = leaderIds.length;
   const avgReplicas =
     partitions.length > 0
-      ? partitions.reduce(
-          (sum, partition) => sum + (partition.replicas?.length ?? 0),
-          0,
-        ) / partitions.length
+      ? partitions.reduce((sum, partition) => sum + (partition.replicas?.length ?? 0), 0) /
+        partitions.length
       : undefined;
   const syncedPartitions = partitions.length
-    ? partitions.filter(
-        (p) => (p.isr?.length ?? 0) === (p.replicas?.length ?? 0),
-      ).length
+    ? partitions.filter((p) => (p.isr?.length ?? 0) === (p.replicas?.length ?? 0)).length
     : 0;
   const inSyncPercent =
-    partitions.length > 0
-      ? Math.round((syncedPartitions / partitions.length) * 100)
-      : undefined;
-  const leadersList =
-    leaderIds.length > 0 ? leaderIds.join(', ') : 'n/a';
-  const metadataTag = metadata
-    ? 'Cluster metadata available'
-    : 'Single-node metadata';
+    partitions.length > 0 ? Math.round((syncedPartitions / partitions.length) * 100) : undefined;
   const producePercentiles = metricsSnapshot
     ? latencyPercentiles(metricsSnapshot.produceLatency)
     : null;
@@ -129,30 +120,79 @@ export default function Dashboard() {
     ? latencyPercentiles(metricsSnapshot.fetchLatency)
     : null;
 
+  const endpointDisplay = useMemo(() => {
+    if (!info) return null;
+    return {
+      binary: resolveEndpointDisplay(info.binaryEndpoint, 'tcp'),
+      mqtt: resolveEndpointDisplay(info.mqttEndpoint, 'mqtt'),
+      http: resolveEndpointDisplay(info.httpEndpoint, 'http'),
+    };
+  }, [info]);
+
+  if (loading) return <p className="muted">Loading dashboard...</p>;
+
   return (
     <div className="layout-grid" style={{ gap: 18 }}>
+      <div className="topbar" style={{ marginBottom: 0 }}>
+        <div>
+          <h3 style={{ margin: '0 0 4px' }}>Preview dashboard</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            Core single-node status, broker endpoints, cluster metadata, and live metrics.
+          </p>
+        </div>
+        <div className="actions">
+          {lastUpdated && <span className="tag">Updated {formatDate(lastUpdated)}</span>}
+          <button className="button secondary" onClick={() => void loadDashboard()}>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {loadError && (
+        <div className="card">
+          <p className="error-text" style={{ margin: 0 }}>
+            Failed to refresh broker snapshot: {loadError}
+          </p>
+        </div>
+      )}
+
       <div
         className="layout-grid"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 12 }}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))',
+          gap: 12,
+        }}
       >
         <Card
           title="Broker"
+          value={info?.id ?? 'wave-node'}
           subtitle={
-            info ? (
-              <div>
-                <div>Binary: {info.binaryEndpoint}</div>
-                <div>MQTT: {info.mqttEndpoint}</div>
-                <div>HTTP: {info.httpEndpoint}</div>
+            endpointDisplay ? (
+              <div className="endpoint-list">
+                <EndpointRow label="Binary" value={endpointDisplay.binary.label} />
+                <EndpointRow label="MQTT" value={endpointDisplay.mqtt.label} />
+                <EndpointRow
+                  label="HTTP"
+                  value={endpointDisplay.http.url ?? endpointDisplay.http.label}
+                  href={endpointDisplay.http.url}
+                />
                 <div>
-                  Cluster: {info.clusterID ?? 'n/a'}; controller: {info.controllerMode ?? 'single'}
+                  Cluster: {info?.clusterID ?? 'n/a'}; controller: {info?.controllerMode ?? 'single'}
                 </div>
               </div>
             ) : (
               '-'
             )
           }
-          value={info?.id ?? 'wave-node'}
-          footer={<StatusPill status="up" label="Healthy" />}
+          footer={
+            <div className="actions">
+              <StatusPill status="up" label="Healthy" />
+              {endpointDisplay?.http.derivedFromBrowserHost && (
+                <span className="tag">HTTP resolved via browser host</span>
+              )}
+            </div>
+          }
         />
         <Card
           title="Controller"
@@ -162,7 +202,7 @@ export default function Dashboard() {
                 mode: {controller.mode}, state: {controller.raftState}, term: {controller.term}
               </span>
             ) : (
-              <span className="muted">Not available</span>
+              <span className="muted">Controller endpoint unavailable</span>
             )
           }
           value={controller?.clusterID ?? info?.clusterID ?? info?.id ?? 'cluster'}
@@ -179,20 +219,31 @@ export default function Dashboard() {
           }
         />
         <Card
-          title="Health / Metrics"
-          subtitle={<span className="muted">Prometheus endpoint</span>}
-          value={<a href={metricsURL}>/metrics</a>}
-          footer={
-            <a href={metricsURL} className="tag">
-              Open metrics
-            </a>
+          title="API / Metrics"
+          subtitle={
+            <div className="endpoint-list">
+              <EndpointRow label="API base" value={baseLabel} />
+              <EndpointRow label="Metrics" value={metricsURL} href={metricsURL} />
+            </div>
           }
+          footer={<span className="tag">Preview surface</span>}
         />
       </div>
 
-      <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
+      <div
+        className="layout-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))',
+          gap: 12,
+        }}
+      >
         <Card title="Topics" value={summary ? summary.topics : '-'} subtitle="Total topics" />
-        <Card title="Partitions" value={summary ? summary.partitions : '-'} subtitle="Total partitions" />
+        <Card
+          title="Partitions"
+          value={summary ? summary.partitions : '-'}
+          subtitle="Total partitions"
+        />
         <Card
           title="Messages produced"
           value={summary ? formatNumber(summary.produced) : '-'}
@@ -218,7 +269,7 @@ export default function Dashboard() {
               /api/cluster
             </p>
           </div>
-          <span className="tag">{metadataTag}</span>
+          <span className="tag">{metadata ? 'Cluster metadata available' : 'Single-node metadata'}</span>
         </div>
         <div
           style={{
@@ -243,12 +294,9 @@ export default function Dashboard() {
           </div>
           <div className="stat-item">
             <div className="label">Leaders</div>
-            <div className="value">{metadata ? leaderCount : '-'}</div>
-            <p
-              className="muted"
-              style={{ margin: 0, fontSize: 12, wordBreak: 'break-all' }}
-            >
-              {metadata ? leadersList : 'not available'}
+            <div className="value">{metadata ? leaderIds.length : '-'}</div>
+            <p className="muted" style={{ margin: 0, fontSize: 12, wordBreak: 'break-all' }}>
+              {metadata ? leaderIds.join(', ') || 'n/a' : 'not available'}
             </p>
           </div>
           <div className="stat-item">
@@ -272,67 +320,75 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {metricsError ? (
-        <p className="muted">Failed to load metrics: {metricsError}</p>
-      ) : metricsSnapshot ? (
-        <div className="card">
-          <div className="topbar" style={{ marginBottom: 10 }}>
-            <div>
-              <h3 style={{ margin: 0 }}>Prometheus metrics</h3>
-              <p className="muted" style={{ margin: 0 }}>
-                /metrics
-              </p>
-            </div>
-            <span className="tag">
-              Updated {new Date(metricsSnapshot.timestamp).toLocaleTimeString()}
-            </span>
+      <div className="card">
+        <div className="topbar" style={{ marginBottom: 10 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Prometheus metrics</h3>
+            <p className="muted" style={{ margin: 0 }}>
+              /metrics
+            </p>
           </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))',
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <div className="stat-item">
-              <div className="label">Produced total</div>
-              <div className="value">
-                {formatNumber(total(metricsSnapshot.producedTotal))}
-              </div>
-              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                wavemq_messages_produced_total
-              </p>
-            </div>
-            <div className="stat-item">
-              <div className="label">Consumed total</div>
-              <div className="value">
-                {formatNumber(total(metricsSnapshot.consumedTotal))}
-              </div>
-              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                wavemq_messages_consumed_total
-              </p>
-            </div>
-            <div className="stat-item">
-              <div className="label">Request errors</div>
-              <div className="value">{metricsSnapshot.requestErrorsTotal}</div>
-              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                wavemq_request_errors_total
-              </p>
-            </div>
-          </div>
-          <div className="layout-grid two" style={{ gap: 12 }}>
-            {producePercentiles && (
-              <LatencyPercentilePanel label="Produce latency" data={producePercentiles} />
+          <div className="actions">
+            {metricsSnapshot && (
+              <span className="tag">Updated {formatDate(metricsSnapshot.timestamp)}</span>
             )}
-            {fetchPercentiles && (
-              <LatencyPercentilePanel label="Fetch latency" data={fetchPercentiles} />
-            )}
+            <button className="button secondary" onClick={() => void loadMetricsSnapshot()}>
+              Refresh metrics
+            </button>
           </div>
         </div>
-      ) : (
-        <p className="muted">Loading metrics snapshot...</p>
-      )}
+
+        {metricsError ? (
+          <p className="error-text" style={{ margin: 0 }}>
+            Failed to load metrics: {metricsError}
+          </p>
+        ) : metricsLoading && !metricsSnapshot ? (
+          <p className="muted">Loading metrics snapshot...</p>
+        ) : metricsSnapshot ? (
+          <>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))',
+                gap: 12,
+                marginBottom: 12,
+              }}
+            >
+              <div className="stat-item">
+                <div className="label">Produced total</div>
+                <div className="value">{formatNumber(total(metricsSnapshot.producedTotal))}</div>
+                <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                  wavemq_messages_produced_total
+                </p>
+              </div>
+              <div className="stat-item">
+                <div className="label">Consumed total</div>
+                <div className="value">{formatNumber(total(metricsSnapshot.consumedTotal))}</div>
+                <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                  wavemq_messages_consumed_total
+                </p>
+              </div>
+              <div className="stat-item">
+                <div className="label">Request errors</div>
+                <div className="value">{metricsSnapshot.requestErrorsTotal}</div>
+                <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                  wavemq_request_errors_total
+                </p>
+              </div>
+            </div>
+            <div className="layout-grid two" style={{ gap: 12 }}>
+              {producePercentiles && (
+                <LatencyPercentilePanel label="Produce latency" data={producePercentiles} />
+              )}
+              {fetchPercentiles && (
+                <LatencyPercentilePanel label="Fetch latency" data={fetchPercentiles} />
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="muted">Metrics are not available yet.</p>
+        )}
+      </div>
 
       <div className="card">
         <div className="topbar" style={{ marginBottom: 10 }}>
@@ -341,30 +397,32 @@ export default function Dashboard() {
             view all
           </Link>
         </div>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Topic</th>
-              <th>Partitions</th>
-              <th>Replication</th>
-            </tr>
-          </thead>
-          <tbody>
-            {topics.map((topic) => (
-              <tr key={topic.name}>
-                <td>
-                  <Link to={`/topics/${topic.name}`}>{topic.name}</Link>
-                </td>
-                <td>{topic.partitions}</td>
-                <td>x{topic.replicationFactor}</td>
+        {topics.length ? (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Topic</th>
+                <th>Partitions</th>
+                <th>Replication</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="muted" style={{ marginTop: 6 }}>
-          Replica / ISR layout is displayed in more detail on the <Link to="/cluster">Cluster</Link>{' '}
-          page and per-topic details.
-        </p>
+            </thead>
+            <tbody>
+              {topics.map((topic) => (
+                <tr key={topic.name}>
+                  <td>
+                    <Link to={`/topics/${topic.name}`}>{topic.name}</Link>
+                  </td>
+                  <td>{topic.partitions}</td>
+                  <td>x{topic.replicationFactor}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            No topics created yet.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -372,6 +430,29 @@ export default function Dashboard() {
 
 function total(values: Record<string, number>) {
   return Object.values(values).reduce((acc, value) => acc + value, 0);
+}
+
+function EndpointRow({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value: string;
+  href?: string;
+}) {
+  return (
+    <div>
+      <span className="muted">{label}: </span>
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" className="endpoint-link">
+          {value}
+        </a>
+      ) : (
+        <span className="endpoint-text">{value}</span>
+      )}
+    </div>
+  );
 }
 
 function LatencyPercentilePanel({
@@ -401,15 +482,7 @@ function LatencyPercentilePanel({
         }}
       >
         {Object.entries(data).map(([key, value]) => (
-          <div
-            key={key}
-            style={{
-              padding: '8px',
-              borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.08)',
-              background: 'rgba(255,255,255,0.02)',
-            }}
-          >
+          <div key={key} className="stat-item">
             <div className="label">{key.toUpperCase()}</div>
             <div className="value">{formatLatency(value)}</div>
           </div>

@@ -198,6 +198,10 @@
     @apply m-0 whitespace-pre-wrap break-words font-mono text-[13px];
   }
 
+  .message-badges {
+    @apply flex flex-wrap gap-1.5 mb-2;
+  }
+
   .chart-card {
     @apply h-[280px];
   }
@@ -239,5 +243,27 @@
     @apply rounded-xl border px-3 py-2 text-[12px] text-[color:var(--muted)] mt-2;
     background: rgba(255, 255, 255, 0.04);
     border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .error-text {
+    @apply text-[color:var(--danger)];
+  }
+
+  .success-text {
+    color: var(--accent);
+  }
+
+  .endpoint-list {
+    @apply flex flex-col gap-1;
+  }
+
+  .endpoint-text,
+  .endpoint-link {
+    @apply font-mono text-[13px];
+    word-break: break-all;
+  }
+
+  .endpoint-link {
+    color: var(--accent);
   }
 }

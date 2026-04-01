@@ -1,119 +1,45 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   fetchMessages,
   fetchTopicDetails,
   fetchClusterMetadata,
   produceMessage,
+  produceMessageToPartition,
 } from '@/api/brokerApi';
 import type {
   ClusterMetadata,
-  Message,
   PartitionAssignment,
   ProduceResult,
   TopicDetails as TopicDetailsType,
 } from '@/types';
 import { formatDate } from '@/utils/format';
+import { inspectPayload } from '@/utils/payload';
+
+type ProduceMode = 'partition' | 'hash';
 
 export default function TopicDetails() {
   const { name } = useParams<{ name: string }>();
   const [details, setDetails] = useState<TopicDetailsType | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<TopicDetailsMessage[]>([]);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [selectedPartition, setSelectedPartition] = useState<number | null>(null);
-  const [offset, setOffset] = useState<number | undefined>(undefined);
+  const [offsetInput, setOffsetInput] = useState('');
   const [limit, setLimit] = useState(20);
-  const [loading, setLoading] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [produceMode, setProduceMode] = useState<ProduceMode>('partition');
   const [produceKey, setProduceKey] = useState('');
   const [produceValue, setProduceValue] = useState('');
   const [produceLoading, setProduceLoading] = useState(false);
   const [produceError, setProduceError] = useState<string | null>(null);
   const [produceResult, setProduceResult] = useState<ProduceResult | null>(null);
   const [clusterMetadata, setClusterMetadata] = useState<ClusterMetadata | null>(null);
-
-  useEffect(() => {
-    if (!name) return;
-    async function load(topic: string) {
-      const data = await fetchTopicDetails(topic);
-      setDetails(data);
-      const firstPartition = data.partitions[0]?.id ?? null;
-      setSelectedPartition(firstPartition);
-      setOffset(
-        data.partitions.find((p) => p.id === firstPartition)?.highWatermark,
-      );
-      if (firstPartition !== null) {
-        const msgs = await fetchMessages(topic, {
-          partition: firstPartition,
-          limit,
-        });
-        setMessages(msgs);
-      }
-    }
-    load(name).catch(console.error);
-  }, [name, limit]);
-
-  useEffect(() => {
-    let active = true;
-    async function loadClusterMetadata() {
-      try {
-        const data = await fetchClusterMetadata();
-        if (!active) return;
-        setClusterMetadata(data);
-      } catch (err) {
-        console.warn('Cluster metadata unavailable', err);
-      }
-    }
-    loadClusterMetadata();
-    return () => {
-      active = false;
-    };
-  }, []);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   const partitions = details?.partitions ?? [];
   const prettyName = details?.name ?? name ?? 'topic';
   const partitionCount = details?.partitionCount ?? partitions.length;
-
-  async function loadMessages() {
-    if (!name || selectedPartition === null) return;
-    setLoading(true);
-    try {
-      const msgs = await fetchMessages(name, {
-        partition: selectedPartition,
-        offset,
-        limit,
-      });
-      setMessages(msgs);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleProduce() {
-    if (!name) return;
-    setProduceError(null);
-    setProduceResult(null);
-    if (!produceValue.trim()) {
-      setProduceError('Value is required');
-      return;
-    }
-    if (!produceKey.trim()) {
-      setProduceError('Key is required for hash routing');
-      return;
-    }
-    setProduceLoading(true);
-    try {
-      const result = await produceMessage(name, {
-        key: produceKey.trim(),
-        value: produceValue,
-      });
-      setProduceResult(result);
-      setProduceValue('');
-      await loadMessages();
-    } catch (err) {
-      setProduceError((err as Error).message);
-    } finally {
-      setProduceLoading(false);
-    }
-  }
 
   const selectedPartitionInfo = useMemo(
     () => partitions.find((p) => p.id === selectedPartition),
@@ -132,6 +58,110 @@ export default function TopicDetails() {
     );
   }, [clusterMetadata, details?.name]);
 
+  const loadMessages = useCallback(async () => {
+    if (!name || selectedPartition === null) return;
+    setLoadingMessages(true);
+    try {
+      const offset =
+        offsetInput.trim() === '' ? undefined : Number(offsetInput.trim());
+      const msgs = await fetchMessages(name, {
+        partition: selectedPartition,
+        offset: Number.isFinite(offset) ? offset : undefined,
+        limit,
+      });
+      setMessages(msgs);
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, [limit, name, offsetInput, selectedPartition]);
+
+  const loadPage = useCallback(async () => {
+    if (!name) return;
+    setPageLoading(true);
+    try {
+      const [topicDetails, metadata] = await Promise.all([
+        fetchTopicDetails(name),
+        fetchClusterMetadata().catch((err) => {
+          console.warn('Cluster metadata unavailable', err);
+          return null;
+        }),
+      ]);
+      setDetails(topicDetails);
+      setClusterMetadata(metadata);
+
+      const firstPartition = topicDetails.partitions[0]?.id ?? null;
+      setSelectedPartition((current) => current ?? firstPartition);
+
+      const activePartition =
+        topicDetails.partitions.find((p) => p.id === selectedPartition) ??
+        topicDetails.partitions[0];
+      if (activePartition) {
+        setOffsetInput(String(activePartition.highWatermark));
+        const msgs = await fetchMessages(name, {
+          partition: activePartition.id,
+          limit,
+        });
+        setMessages(msgs);
+      } else {
+        setMessages([]);
+        setOffsetInput('');
+      }
+
+      setPageError(null);
+      setLastUpdated(Date.now());
+    } catch (err) {
+      console.error('Failed to load topic details', err);
+      setPageError((err as Error).message);
+    } finally {
+      setPageLoading(false);
+    }
+  }, [limit, name, selectedPartition]);
+
+  useEffect(() => {
+    void loadPage();
+  }, [loadPage]);
+
+  async function handleProduce() {
+    if (!name) return;
+    setProduceError(null);
+    setProduceResult(null);
+
+    if (!produceValue.trim()) {
+      setProduceError('Value is required');
+      return;
+    }
+    if (produceMode === 'hash' && !produceKey.trim()) {
+      setProduceError('Key is required for hash routing');
+      return;
+    }
+    if (produceMode === 'partition' && selectedPartition === null) {
+      setProduceError('Select a partition first');
+      return;
+    }
+
+    setProduceLoading(true);
+    try {
+      const payload = {
+        key: produceKey.trim() || undefined,
+        value: produceValue,
+      };
+      const result =
+        produceMode === 'partition' && selectedPartition !== null
+          ? await produceMessageToPartition(name, selectedPartition, payload)
+          : await produceMessage(name, payload);
+      setProduceResult(result);
+      setProduceValue('');
+      await loadMessages();
+      await loadPage();
+    } catch (err) {
+      setProduceError((err as Error).message);
+    } finally {
+      setProduceLoading(false);
+    }
+  }
+
+  if (pageLoading) return <p className="muted">Loading topic details...</p>;
+
   return (
     <div className="layout-grid" style={{ gap: 16 }}>
       <div className="topbar" style={{ marginBottom: 0 }}>
@@ -141,10 +171,24 @@ export default function TopicDetails() {
             Partitions: {partitionCount}
           </p>
         </div>
-        <Link to="/topics" className="tag">
-          back to list
-        </Link>
+        <div className="actions">
+          {lastUpdated && <span className="tag">Updated {formatDate(lastUpdated)}</span>}
+          <button className="button secondary" onClick={() => void loadPage()}>
+            Refresh
+          </button>
+          <Link to="/topics" className="tag">
+            back to list
+          </Link>
+        </div>
       </div>
+
+      {pageError && (
+        <div className="card">
+          <p className="error-text" style={{ margin: 0 }}>
+            Failed to load topic details: {pageError}
+          </p>
+        </div>
+      )}
 
       <div className="card">
         <h4 style={{ margin: '0 0 10px' }}>Partitions</h4>
@@ -164,16 +208,13 @@ export default function TopicDetails() {
               const assignment = assignmentMap[p.id];
               const replicas = assignment?.replicas ?? [];
               const isr = assignment?.isr ?? [];
-              const isDegraded =
-                replicas.length > 0 && isr.length < replicas.length;
+              const isDegraded = replicas.length > 0 && isr.length < replicas.length;
               const leaderLabel = assignment?.leader ?? p.leader;
               return (
                 <tr
                   key={`${p.id}-${leaderLabel}`}
                   style={
-                    isDegraded
-                      ? { backgroundColor: 'rgba(255, 196, 0, 0.08)' }
-                      : undefined
+                    isDegraded ? { backgroundColor: 'rgba(255, 196, 0, 0.08)' } : undefined
                   }
                 >
                   <td>{p.id}</td>
@@ -187,10 +228,6 @@ export default function TopicDetails() {
             })}
           </tbody>
         </table>
-        <p className="muted" style={{ marginTop: 6 }}>
-          Replica sets and ISR membership come from <code>/api/cluster</code>, so you can easily
-          check which brokers host each partition directly on this page.
-        </p>
       </div>
 
       <div className="card">
@@ -198,11 +235,11 @@ export default function TopicDetails() {
           <div>
             <h4 style={{ margin: 0 }}>Message browser</h4>
             <p className="muted" style={{ margin: 0 }}>
-              Pick a partition and offset to load recent messages
+              Partition-level fetch, binary-safe preview rendering, and quick offset jumps.
             </p>
           </div>
-          <button className="button" onClick={loadMessages} disabled={loading}>
-            {loading ? 'Loading...' : 'Load'}
+          <button className="button" onClick={() => void loadMessages()} disabled={loadingMessages}>
+            {loadingMessages ? 'Loading...' : 'Load'}
           </button>
         </div>
 
@@ -216,7 +253,7 @@ export default function TopicDetails() {
                 const next = Number(e.target.value);
                 setSelectedPartition(next);
                 const target = partitions.find((p) => p.id === next);
-                if (target) setOffset(target.highWatermark);
+                setOffsetInput(target ? String(target.highWatermark) : '');
               }}
             >
               {partitions.map((p) => (
@@ -227,12 +264,12 @@ export default function TopicDetails() {
             </select>
           </div>
           <div className="form-field">
-            <label className="muted">Offset (&lt;=)</label>
+            <label className="muted">Offset</label>
             <input
               className="input"
               type="number"
-              value={offset ?? ''}
-              onChange={(e) => setOffset(Number(e.target.value))}
+              value={offsetInput}
+              onChange={(e) => setOffsetInput(e.target.value)}
             />
           </div>
           <div className="form-field">
@@ -246,16 +283,45 @@ export default function TopicDetails() {
               onChange={(e) => setLimit(Number(e.target.value))}
             />
           </div>
+          {selectedPartitionInfo && (
+            <div className="actions">
+              <button
+                className="button secondary"
+                onClick={() => setOffsetInput(String(selectedPartitionInfo.startOffset))}
+              >
+                Jump to start
+              </button>
+              <button
+                className="button secondary"
+                onClick={() => setOffsetInput(String(selectedPartitionInfo.highWatermark))}
+              >
+                Jump to latest
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="section">
           <h4 style={{ margin: '12px 0 6px' }}>Produce message</h4>
           <p className="muted" style={{ marginTop: 0 }}>
-            Partition is selected automatically by key hash.
+            For preview, you can publish directly into the selected partition or let broker key-hash routing choose it.
           </p>
           <div className="form-row">
             <div className="form-field">
-              <label className="muted">Key (required)</label>
+              <label className="muted">Mode</label>
+              <select
+                className="select"
+                value={produceMode}
+                onChange={(e) => setProduceMode(e.target.value as ProduceMode)}
+              >
+                <option value="partition">Direct partition</option>
+                <option value="hash">Hash by key</option>
+              </select>
+            </div>
+            <div className="form-field">
+              <label className="muted">
+                Key {produceMode === 'hash' ? '(required)' : '(optional)'}
+              </label>
               <input
                 className="input"
                 value={produceKey}
@@ -263,11 +329,11 @@ export default function TopicDetails() {
                 placeholder="sensor-1"
               />
             </div>
-            <div className="form-field" style={{ flex: 1, minWidth: 240 }}>
+            <div className="form-field" style={{ flex: 1, minWidth: 260 }}>
               <label className="muted">Value</label>
               <textarea
                 className="input"
-                style={{ minHeight: 80 }}
+                style={{ minHeight: 96 }}
                 value={produceValue}
                 onChange={(e) => setProduceValue(e.target.value)}
                 placeholder='{"value": 42.0}'
@@ -283,50 +349,59 @@ export default function TopicDetails() {
             </button>
           </div>
           {produceError && (
-            <p className="muted" style={{ color: 'var(--danger)' }}>
+            <p className="error-text" style={{ marginBottom: 0 }}>
               {produceError}
             </p>
           )}
           {produceResult && (
-            <p className="muted" style={{ color: 'var(--accent)' }}>
+            <p className="success-text" style={{ marginBottom: 0 }}>
               Sent to partition {produceResult.partition}, base offset {produceResult.baseOffset}.
             </p>
           )}
         </div>
 
         <div className="section">
-          <h4 style={{ margin: '12px 0 6px' }}>
-            Messages ({messages.length})
-          </h4>
+          <h4 style={{ margin: '12px 0 6px' }}>Messages ({messages.length})</h4>
           {selectedPartitionInfo && (
             <p className="muted" style={{ marginTop: 0 }}>
-              HWM: {selectedPartitionInfo.highWatermark}, Start:{' '}
-              {selectedPartitionInfo.startOffset}
+              HWM: {selectedPartitionInfo.highWatermark}, Start: {selectedPartitionInfo.startOffset}
             </p>
           )}
-          {messages.map((msg) => (
-            <div key={`${msg.partition}-${msg.offset}`} className="message">
-              <div className="meta">
-                Partition {msg.partition} - Offset {msg.offset} -{' '}
-                {formatDate(msg.timestamp)}
-              </div>
-              <pre>{prettyPrint(msg.value)}</pre>
-            </div>
-          ))}
-          {!messages.length && <p className="muted">No data yet.</p>}
+          {messages.length ? (
+            messages.map((msg) => {
+              const payload = inspectPayload(msg.value);
+              return (
+                <div key={`${msg.partition}-${msg.offset}`} className="message">
+                  <div className="meta">
+                    Partition {msg.partition} - Offset {msg.offset} - {formatDate(msg.timestamp)}
+                  </div>
+                  <div className="message-badges">
+                    {payload.badges.map((badge) => (
+                      <span key={`${msg.offset}-${badge}`} className="tag">
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+                  <pre>{payload.display}</pre>
+                </div>
+              );
+            })
+          ) : (
+            <p className="muted">No data yet.</p>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function prettyPrint(value: string) {
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    return value;
-  }
-}
+type TopicDetailsMessage = {
+  partition: number;
+  offset: number;
+  key?: string;
+  value: string;
+  timestamp: string;
+};
 
 function formatList(values: number[] | null | undefined) {
   if (!values || !values.length) return '-';

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { fetchBrokerInfo, fetchControllerStatus } from '@/api/brokerApi';
@@ -24,50 +24,42 @@ const apiBaseLabel = apiEnvBase || 'relative /api';
 
 export default function Topbar() {
   const location = useLocation();
-  const title = useMemo(
-    () => resolveTitle(location.pathname),
-    [location.pathname],
-  );
+  const title = useMemo(() => resolveTitle(location.pathname), [location.pathname]);
 
   const [controller, setController] = useState<ControllerStatus | null>(null);
   const [brokerInfo, setBrokerInfo] = useState<BrokerInfo | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    async function loadStatus() {
-      try {
-        const [controllerResp, brokerResp] = await Promise.all([
-          fetchControllerStatus().catch((err) => {
-            console.warn('Controller status unavailable', err);
-            return null;
-          }),
-          fetchBrokerInfo().catch((err) => {
-            console.warn('Broker info unavailable', err);
-            return null;
-          }),
-        ]);
-        if (!active) return;
-        setController(controllerResp);
-        setBrokerInfo(brokerResp);
-      } catch (err) {
-        console.error('Failed to refresh controller data', err);
-      }
+  const loadStatus = useCallback(async () => {
+    try {
+      const [controllerResp, brokerResp] = await Promise.all([
+        fetchControllerStatus().catch((err) => {
+          console.warn('Controller status unavailable', err);
+          return null;
+        }),
+        fetchBrokerInfo().catch((err) => {
+          console.warn('Broker info unavailable', err);
+          return null;
+        }),
+      ]);
+      setController(controllerResp);
+      setBrokerInfo(brokerResp);
+    } catch (err) {
+      console.error('Failed to refresh controller data', err);
     }
-    loadStatus();
-    return () => {
-      active = false;
-    };
   }, []);
 
-  const controllerMode =
-    controller?.mode ?? brokerInfo?.controllerMode ?? 'single';
+  useEffect(() => {
+    void loadStatus();
+    const id = window.setInterval(loadStatus, 10_000);
+    return () => window.clearInterval(id);
+  }, [loadStatus]);
+
+  const controllerMode = controller?.mode ?? brokerInfo?.controllerMode ?? 'single';
   const raftState = controller?.raftState ?? 'unknown';
   const term = controller?.term ?? 0;
   const peers = controller?.peers ?? [];
   const peerList = peers.length
-    ? peers
-        .map((peer) => `${peer.id}${peer.address ? `@${peer.address}` : ''}`)
-        .join(', ')
+    ? peers.map((peer) => `${peer.id}${peer.address ? `@${peer.address}` : ''}`).join(', ')
     : 'none';
   const replicationFactor = brokerInfo?.replicationFactor ?? 1;
   const showExperimentBanner = controllerMode === 'raft' && replicationFactor > 1;
@@ -82,12 +74,8 @@ export default function Topbar() {
           </p>
           <div className="topbar-meta">
             <span className="tag">Mode: {controllerMode}</span>
-            <span className="tag">
-              State: {raftState} · term {term}
-            </span>
-            <span className="tag">
-              Peers: {peerList}
-            </span>
+            <span className="tag">State: {raftState} | term {term}</span>
+            <span className="tag">Peers: {peerList}</span>
           </div>
         </div>
         <div className="actions">
@@ -95,11 +83,7 @@ export default function Topbar() {
           <span className="pill success">Live API</span>
         </div>
       </div>
-      {showExperimentBanner && (
-        <div className="experiment-banner">
-          Raft mode with RF&gt;1 is active.
-        </div>
-      )}
+      {showExperimentBanner && <div className="experiment-banner">Raft mode with RF&gt;1 is active.</div>}
     </>
   );
 }

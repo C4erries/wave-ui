@@ -22,12 +22,29 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
     },
     ...init,
   });
-  if (!res.ok) {
-    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
-  }
   const text = await res.text();
+  if (!res.ok) {
+    const detail = extractErrorDetail(text);
+    throw new Error(
+      detail
+        ? `${res.status} ${res.statusText}: ${detail}`
+        : `${res.status} ${res.statusText}`,
+    );
+  }
   if (!text) return undefined as T;
   return JSON.parse(text) as T;
+}
+
+function extractErrorDetail(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: string; message?: string };
+    return parsed.error ?? parsed.message ?? trimmed;
+  } catch {
+    return trimmed;
+  }
 }
 
 export async function fetchBrokerInfo(): Promise<BrokerInfo> {
@@ -101,6 +118,20 @@ export async function produceMessage(
 ): Promise<ProduceResult> {
   return requestJSON<ProduceResult>(
     `/api/topics/${encodeURIComponent(topic)}/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export async function produceMessageToPartition(
+  topic: string,
+  partition: number,
+  data: { key?: string; value: string },
+): Promise<ProduceResult> {
+  return requestJSON<ProduceResult>(
+    `/api/topics/${encodeURIComponent(topic)}/partitions/${partition}/messages`,
     {
       method: 'POST',
       body: JSON.stringify(data),

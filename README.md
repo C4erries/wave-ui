@@ -1,31 +1,53 @@
 # wave-ui
 
-React + Vite + TypeScript UI for the Wave MQ broker.
+`wave-ui` is the browser UI for `wave-mq`. It is tuned for preview use with the single-node broker and the same-origin Docker Compose setup.
+
+## Preview status
+
+- Dashboard, Topics, Topic Details, Consumer Groups, Metrics, Cluster, and Data Analysis are the main screens.
+- The UI is aligned with the current broker contract for the preview path.
+- Browser-level smoke is still a useful next step, but the app builds and lints cleanly.
 
 ## Quick start
+
+Local dev:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Vite default URL: http://localhost:5173.
+Preview build:
+
+```bash
+npm run build
+npm run preview
+```
+
+Docker preview from the repo root:
+
+```powershell
+docker compose -f .\docker-compose.single.yml up --build
+```
+
+That stack exposes the UI on `http://localhost:8080`.
 
 ## Environment variables
 
-- `VITE_API_BASE_URL` - optional HTTP API base. If empty, UI uses relative `/api/...`.
-- `VITE_METRICS_URL` - optional Prometheus endpoint. If empty, UI uses relative `/metrics`.
+- `VITE_API_BASE_URL` - optional HTTP API base URL. If empty, the UI uses relative `/api/...` paths.
+- `VITE_METRICS_URL` - optional Prometheus endpoint. If empty, the UI uses relative `/metrics`.
 
-No mock mode is used in runtime UI.
+## Pages
 
-## Scripts
+- `Dashboard`
+- `Topics`
+- `Topic Details`
+- `Consumer Groups`
+- `Metrics`
+- `Cluster`
+- `Data Analysis`
 
-- `npm run dev` - start Vite dev server.
-- `npm run build` - type-check and build production assets.
-- `npm run preview` - preview production build.
-- `npm run lint` - type-check only.
-
-## API used by UI
+## API surface used by the UI
 
 - `GET /api/broker`
 - `GET /api/summary`
@@ -36,22 +58,12 @@ No mock mode is used in runtime UI.
 - `GET /api/topics/:name/messages`
 - `GET /api/topics/:name/partitions/:id/messages`
 - `POST /api/topics`
-- `POST /api/topics/:name/messages` (hash routing by key)
+- `POST /api/topics/:name/messages`
 - `GET /api/consumers`
 - `GET /metrics`
 
-## Metrics
+## Notes
 
-UI reads Wave MQ Prometheus metrics:
-
-- `wavemq_messages_produced_total`
-- `wavemq_messages_consumed_total`
-- `wavemq_request_errors_total`
-- `wavemq_produce_latency_seconds_*`
-- `wavemq_fetch_latency_seconds_*`
-
-## Docker / nginx
-
-- `nginx.conf` proxies `/api` and `/metrics` to `http://broker:8090`.
-- Dockerfile builds static assets and serves them via nginx.
-- Keep `VITE_API_BASE_URL` and `VITE_METRICS_URL` empty in Compose to use nginx proxy chain.
+- Keep the compose preview flow same-origin when possible.
+- For a remote broker, set `VITE_API_BASE_URL` and `VITE_METRICS_URL` explicitly.
+- Root preview entrypoint: [../README.md](../README.md)

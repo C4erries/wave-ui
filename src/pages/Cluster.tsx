@@ -1,37 +1,44 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Card from '@/components/Card';
 import { fetchClusterMetadata, fetchControllerStatus } from '@/api/brokerApi';
 import type { ClusterMetadata, ControllerStatus } from '@/types';
+import { formatDate } from '@/utils/format';
 
 export default function Cluster() {
   const [metadata, setMetadata] = useState<ClusterMetadata | null>(null);
   const [controller, setController] = useState<ControllerStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [metaError, setMetaError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [controllerResp, metadataResp] = await Promise.all([
+        fetchControllerStatus().catch((err) => {
+          console.warn('Controller status unavailable', err);
+          return null;
+        }),
+        fetchClusterMetadata().catch((err) => {
+          console.warn('Cluster metadata unavailable', err);
+          return null;
+        }),
+      ]);
+      setController(controllerResp);
+      setMetadata(metadataResp);
+      setError(!controllerResp && !metadataResp ? 'Cluster endpoints unavailable' : null);
+      setLastUpdated(Date.now());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const [controllerResp, metadataResp] = await Promise.all([
-          fetchControllerStatus().catch((err) => {
-            console.warn('Controller status unavailable', err);
-            return null;
-          }),
-          fetchClusterMetadata().catch((err) => {
-            console.warn('Cluster metadata unavailable', err);
-            return null;
-          }),
-        ]);
-        setController(controllerResp);
-        setMetadata(metadataResp);
-        setMetaError(metadataResp ? null : 'Cluster metadata unavailable');
-      } finally {
-        setLoading(false);
-      }
-    }
     load();
-  }, []);
+    const id = window.setInterval(load, 10_000);
+    return () => window.clearInterval(id);
+  }, [load]);
 
   if (loading) return <p className="muted">Loading cluster...</p>;
 
@@ -43,11 +50,24 @@ export default function Cluster() {
         <div>
           <h3 style={{ margin: '0 0 4px' }}>Cluster</h3>
           <p className="muted" style={{ margin: 0 }}>
-            /api/cluster & /api/controller
+            Single-node preview today, but aligned with raft-style metadata endpoints.
           </p>
         </div>
-        {metaError && <span className="tag">{metaError}</span>}
+        <div className="actions">
+          {lastUpdated && <span className="tag">Updated {formatDate(lastUpdated)}</span>}
+          <button className="button secondary" onClick={() => void load()}>
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="card">
+          <p className="error-text" style={{ margin: 0 }}>
+            {error}
+          </p>
+        </div>
+      )}
 
       <div
         className="layout-grid"
@@ -64,11 +84,7 @@ export default function Cluster() {
           subtitle={`mode: ${controller?.mode ?? 'single'}, term: ${controller?.term ?? 0}`}
           footer={
             controller ? (
-              peers.length ? (
-                <span className="tag">{peers.length} peers</span>
-              ) : (
-                <span className="tag">single</span>
-              )
+              peers.length ? <span className="tag">{peers.length} peers</span> : <span className="tag">single</span>
             ) : (
               <span className="tag">not available</span>
             )
@@ -76,10 +92,10 @@ export default function Cluster() {
         />
         <Card
           title="Brokers"
-          value={metadata?.brokers?.length ?? '-'}
+          value={metadata?.brokers?.length ?? 1}
           subtitle="Registered brokers"
           footer={
-            peers.length ? <span className="muted">{peers.map((p) => p.id).join(', ')}</span> : undefined
+            peers.length ? <span className="muted">{peers.map((p) => p.id).join(', ')}</span> : <span className="muted">No peers</span>
           }
         />
         <Card
@@ -116,7 +132,9 @@ export default function Cluster() {
             </tbody>
           </table>
         ) : (
-          <p className="muted">No broker metadata available.</p>
+          <p className="muted" style={{ margin: 0 }}>
+            No broker metadata available. This is normal for simple single-node snapshots.
+          </p>
         )}
       </div>
 
@@ -159,7 +177,9 @@ export default function Cluster() {
             </tbody>
           </table>
         ) : (
-          <p className="muted">No partition assignments available.</p>
+          <p className="muted" style={{ margin: 0 }}>
+            No partition assignments available.
+          </p>
         )}
       </div>
     </div>

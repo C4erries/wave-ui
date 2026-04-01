@@ -4,10 +4,11 @@ import HistogramChart from '@/components/charts/HistogramChart';
 import WaveformChart from '@/components/charts/WaveformChart';
 import type { Message, Topic } from '@/types';
 import { formatDate } from '@/utils/format';
+import { inspectPayload, parseNumericPayload } from '@/utils/payload';
 import { buildHistogram, calculateStats } from '@/utils/stats';
 import type { StatsResult } from '@/utils/stats';
 
-type NumericMessage = { message: Message; value: number };
+type NumericMessage = { message: Message; value: number; kind: string };
 
 export default function DataAnalysis() {
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -19,6 +20,7 @@ export default function DataAnalysis() {
   const [numericMessages, setNumericMessages] = useState<NumericMessage[]>([]);
   const [stats, setStats] = useState<StatsResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTopics()
@@ -26,7 +28,7 @@ export default function DataAnalysis() {
         setTopics(list);
         if (list[0]) setSelectedTopic(list[0].name);
       })
-      .catch(console.error);
+      .catch((err) => setError((err as Error).message));
   }, []);
 
   useEffect(() => {
@@ -36,7 +38,7 @@ export default function DataAnalysis() {
         setPartitions(detail.partitions.map((p) => p.id));
         setSelectedPartition('all');
       })
-      .catch(console.error);
+      .catch((err) => setError((err as Error).message));
   }, [selectedTopic]);
 
   const waveformData = useMemo(
@@ -61,18 +63,22 @@ export default function DataAnalysis() {
   async function loadData() {
     if (!selectedTopic) return;
     setLoading(true);
+    setError(null);
     try {
-      const partition =
-        selectedPartition === 'all' ? undefined : Number(selectedPartition);
+      const partition = selectedPartition === 'all' ? undefined : Number(selectedPartition);
       const msgs = await fetchMessages(selectedTopic, { partition, limit });
       setMessages(msgs);
       const numeric = extractNumeric(msgs);
       setNumericMessages(numeric);
-      setStats(calculateStats(numeric.map((n) => n.value)));
+      setStats(numeric.length ? calculateStats(numeric.map((n) => n.value)) : null);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
   }
+
+  const numericKinds = Array.from(new Set(numericMessages.map((item) => item.kind)));
 
   return (
     <div className="layout-grid" style={{ gap: 16 }}>
@@ -81,11 +87,10 @@ export default function DataAnalysis() {
           <div>
             <h3 style={{ margin: 0 }}>Data analysis</h3>
             <p className="muted" style={{ margin: 0 }}>
-              Select topic/partition and load recent messages to compute stats and
-              render the waveform.
+              Text/JSON numeric payloads are supported directly. Binary payloads are analyzed when the broker returns them as <code>base64:</code> and they decode to float64.
             </p>
           </div>
-          <button className="button" onClick={loadData} disabled={loading}>
+          <button className="button" onClick={() => void loadData()} disabled={loading}>
             {loading ? 'Loading...' : 'Load data'}
           </button>
         </div>
@@ -131,6 +136,41 @@ export default function DataAnalysis() {
             />
           </div>
         </div>
+        {error && (
+          <p className="error-text" style={{ marginBottom: 0 }}>
+            {error}
+          </p>
+        )}
+      </div>
+
+      <div className="layout-grid two">
+        <div className="card">
+          <div className="stats-grid">
+            <div className="stat-item">
+              <div className="label">Loaded messages</div>
+              <div className="value">{messages.length}</div>
+            </div>
+            <div className="stat-item">
+              <div className="label">Numeric messages</div>
+              <div className="value">{numericMessages.length}</div>
+            </div>
+            <div className="stat-item">
+              <div className="label">Numeric encodings</div>
+              <div className="value">{numericKinds.join(', ') || '-'}</div>
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <p className="muted" style={{ margin: '0 0 8px' }}>
+            Supported numeric paths
+          </p>
+          <div className="message-badges">
+            <span className="tag">plain number</span>
+            <span className="tag">JSON number</span>
+            <span className="tag">{'{ "value": n }'}</span>
+            <span className="tag">base64 float64</span>
+          </div>
+        </div>
       </div>
 
       <div className="layout-grid two">
@@ -157,24 +197,32 @@ export default function DataAnalysis() {
       ) : (
         <div className="card">
           <p className="muted">
-            No numeric payloads yet - load data to see statistics.
+            No numeric payloads detected yet. Load topic data and use plain numbers, JSON numeric fields, or base64 float64 payloads.
           </p>
         </div>
       )}
 
       <div className="card">
         <h4 style={{ margin: '0 0 8px' }}>Messages</h4>
-        {messages.map((msg) => (
-          <div key={`${msg.partition}-${msg.offset}`} className="message">
-            <div className="meta">
-              p{msg.partition} - offset {msg.offset} - {formatDate(msg.timestamp)}
+        {messages.map((msg) => {
+          const payload = inspectPayload(msg.value);
+          return (
+            <div key={`${msg.partition}-${msg.offset}`} className="message">
+              <div className="meta">
+                p{msg.partition} - offset {msg.offset} - {formatDate(msg.timestamp)}
+              </div>
+              <div className="message-badges">
+                {payload.badges.map((badge) => (
+                  <span key={`${msg.offset}-${badge}`} className="tag">
+                    {badge}
+                  </span>
+                ))}
+              </div>
+              <pre>{payload.display}</pre>
             </div>
-            <pre>{prettyPrint(msg.value)}</pre>
-          </div>
-        ))}
-        {!messages.length && (
-          <p className="muted">No messages loaded yet.</p>
-        )}
+          );
+        })}
+        {!messages.length && <p className="muted">No messages loaded yet.</p>}
       </div>
     </div>
   );
@@ -183,37 +231,12 @@ export default function DataAnalysis() {
 function extractNumeric(messages: Message[]): NumericMessage[] {
   const numeric: NumericMessage[] = [];
   messages.forEach((msg) => {
-    const value = parseNumeric(msg.value);
+    const value = parseNumericPayload(msg.value);
     if (value === null) return;
-    numeric.push({ message: msg, value });
+    const info = inspectPayload(msg.value);
+    numeric.push({ message: msg, value, kind: info.kind });
   });
   return numeric;
-}
-
-function parseNumeric(raw: string): number | null {
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed === 'number') return parsed;
-    if (parsed && typeof parsed === 'object') {
-      const candidate =
-        (parsed as Record<string, unknown>).value ??
-        (parsed as Record<string, unknown>).total;
-      const num = Number(candidate);
-      if (!Number.isNaN(num)) return num;
-    }
-  } catch {
-    // ignore
-  }
-  const direct = Number(raw);
-  return Number.isFinite(direct) ? direct : null;
-}
-
-function prettyPrint(value: string) {
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    return value;
-  }
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
