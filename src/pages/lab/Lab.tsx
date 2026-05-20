@@ -1,10 +1,15 @@
+import { useSearchParams } from 'react-router-dom';
 import { useTopicLatest } from '@/hooks/useTopicLatest';
 import TimeSeriesChart from './TimeSeriesChart';
 import SpectrumChart from './SpectrumChart';
 import type { DecodedRecord } from '@/lib/recordCodec';
 
-const RAW_TOPIC = 'raw.gen.chA';
-const SPECTRUM_TOPIC = 'spectrum.gen.chA';
+type SourceKey = 'gen' | 'osc';
+
+const SOURCES: Record<SourceKey, { label: string; raw: string; spectrum: string }> = {
+  gen: { label: 'Синтетика (gen)', raw: 'raw.gen.chA', spectrum: 'spectrum.gen.chA' },
+  osc: { label: 'Осциллограф (osc)', raw: 'raw.osc.chA', spectrum: 'spectrum.osc.chA' },
+};
 
 type StatusLevel = 'ok' | 'nodata' | 'stale' | 'error';
 
@@ -46,23 +51,69 @@ function formatTimestamp(ns: bigint): string {
   return new Date(ms).toISOString().replace('T', ' ').slice(0, 23);
 }
 
+function TopicNotFoundMessage({ sourceKey }: { sourceKey: SourceKey }) {
+  const isOsc = sourceKey === 'osc';
+  return (
+    <div className="card" style={{ color: '#f97316' }}>
+      {isOsc
+        ? 'Топики осциллографа не созданы. Запустите wave-osc или создайте топики вручную через mbctl.'
+        : `Топики источника «${SOURCES[sourceKey].label}» не найдены на брокере.`}
+    </div>
+  );
+}
+
 export default function Lab() {
-  const raw = useTopicLatest(RAW_TOPIC);
-  const spec = useTopicLatest(SPECTRUM_TOPIC);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawSource = searchParams.get('source');
+  const sourceKey: SourceKey = rawSource === 'osc' ? 'osc' : 'gen';
+  const source = SOURCES[sourceKey];
+
+  const raw = useTopicLatest(source.raw);
+  const spec = useTopicLatest(source.spectrum);
+
+  const topicsNotFound = raw.topicNotFound || spec.topicNotFound;
 
   const rawLevel = statusLevel(raw.record, raw.isStale, raw.error);
   const specLevel = statusLevel(spec.record, spec.isStale, spec.error);
-  const overall = worstStatus(rawLevel, specLevel);
+  const overall = topicsNotFound ? 'nodata' : worstStatus(rawLevel, specLevel);
   const displayError = raw.error ?? spec.error ?? null;
+
+  function handleSourceChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    setSearchParams({ source: e.target.value });
+  }
 
   return (
     <div className="layout-grid">
       <div className="card topbar">
         <h1 style={{ margin: 0 }}>Лаборатория</h1>
-        <StatusBadge level={overall} error={displayError} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+            <span className="muted">Источник:</span>
+            <select
+              value={sourceKey}
+              onChange={handleSourceChange}
+              style={{
+                padding: '4px 8px',
+                borderRadius: 6,
+                border: '1px solid var(--border, #333)',
+                background: 'var(--card-bg, #1a1a1a)',
+                color: 'inherit',
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              {(Object.keys(SOURCES) as SourceKey[]).map((k) => (
+                <option key={k} value={k}>{SOURCES[k].label}</option>
+              ))}
+            </select>
+          </label>
+          <StatusBadge level={overall} error={displayError} />
+        </div>
       </div>
 
-      {raw.record && (
+      {topicsNotFound && <TopicNotFoundMessage sourceKey={sourceKey} />}
+
+      {!topicsNotFound && raw.record && (
         <div className="card">
           <div className="stats-grid">
             <div className="stat-item">
@@ -95,27 +146,29 @@ export default function Lab() {
         </div>
       )}
 
-      <div className="layout-grid two">
-        <div className="chart-card">
-          <h3 style={{ marginTop: 0 }}>Временной сигнал</h3>
-          {raw.record ? (
-            <TimeSeriesChart samples={raw.record.samples} sampleRateHz={raw.record.sampleRateHz} />
-          ) : (
-            <p className="muted">{raw.error ? `Ошибка: ${raw.error}` : 'Загрузка...'}</p>
-          )}
+      {!topicsNotFound && (
+        <div className="layout-grid two">
+          <div className="chart-card">
+            <h3 style={{ marginTop: 0 }}>Временной сигнал</h3>
+            {raw.record ? (
+              <TimeSeriesChart samples={raw.record.samples} sampleRateHz={raw.record.sampleRateHz} />
+            ) : (
+              <p className="muted">{raw.error ? `Ошибка: ${raw.error}` : 'Загрузка...'}</p>
+            )}
+          </div>
+          <div className="chart-card">
+            <h3 style={{ marginTop: 0 }}>Спектр</h3>
+            {spec.record ? (
+              <SpectrumChart samples={spec.record.samples} sampleRateHz={spec.record.sampleRateHz} />
+            ) : (
+              <p className="muted">{spec.error ? `Ошибка: ${spec.error}` : 'Загрузка...'}</p>
+            )}
+          </div>
         </div>
-        <div className="chart-card">
-          <h3 style={{ marginTop: 0 }}>Спектр</h3>
-          {spec.record ? (
-            <SpectrumChart samples={spec.record.samples} sampleRateHz={spec.record.sampleRateHz} />
-          ) : (
-            <p className="muted">{spec.error ? `Ошибка: ${spec.error}` : 'Загрузка...'}</p>
-          )}
-        </div>
-      </div>
+      )}
 
       <p className="muted" style={{ textAlign: 'center', fontSize: 12 }}>
-        обновляется каждые 400 мс
+        обновляется каждые 400 мс · топики: {source.raw}, {source.spectrum}
       </p>
     </div>
   );

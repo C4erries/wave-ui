@@ -14,11 +14,19 @@ export function useTopicLatest(
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [topicNotFound, setTopicNotFound] = useState(false);
 
   const lastOffsetRef = useRef<number | null>(null);
   const lastUpdatedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
+    // Reset all state when topic changes
+    setRecord(null);
+    setError(null);
+    setIsStale(false);
+    setLastUpdatedAt(null);
+    setTopicNotFound(false);
+
     if (!enabled) return;
 
     let cancelled = false;
@@ -33,7 +41,14 @@ export function useTopicLatest(
           if (hwm < 0) return;
           lastOffsetRef.current = Math.max(0, hwm - 1);
         } catch (e) {
-          if (!cancelled) setError(String(e));
+          if (!cancelled) {
+            const msg = String(e);
+            if (msg.includes('404')) {
+              setTopicNotFound(true);
+            } else {
+              setError(msg);
+            }
+          }
         }
         return;
       }
@@ -79,5 +94,5 @@ export function useTopicLatest(
     };
   }, [topic, enabled, intervalMs]);
 
-  return { record, error, isStale, lastUpdatedAt };
+  return { record, error, isStale, lastUpdatedAt, topicNotFound };
 }
