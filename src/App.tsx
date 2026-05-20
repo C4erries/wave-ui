@@ -8,6 +8,7 @@ import Metrics from './pages/Metrics';
 import DataAnalysis from './pages/DataAnalysis';
 import Cluster from './pages/Cluster';
 import Lab from './pages/lab/Lab';
+import Constructor from './pages/constructor/Constructor';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/metrics" element={<Metrics />} />
           <Route path="/analysis" element={<DataAnalysis />} />
           <Route path="/lab" element={<Lab />} />
+          <Route path="/constructor" element={<Constructor />} />
         </Routes>
       </Layout>
     </Router>

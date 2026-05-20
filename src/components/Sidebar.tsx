@@ -8,6 +8,7 @@ const links = [
   { to: '/metrics', label: 'Metrics', icon: '[M]' },
   { to: '/analysis', label: 'Data Analysis', icon: '[DA]' },
   { to: '/lab', label: 'Лаборатория', icon: '[LAB]' },
+  { to: '/constructor', label: 'Конструктор', icon: '[CON]' },
 ];
 
 export default function Sidebar() {
