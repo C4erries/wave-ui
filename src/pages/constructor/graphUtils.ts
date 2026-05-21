@@ -82,6 +82,39 @@ export const NODE_CATALOGUE: NodeTypeDef[] = [
       { key: 'group_id', label: 'Group ID', type: 'text', defaultValue: 'fft-gen-chA' },
     ],
   },
+  {
+    kind: 'operator',
+    type: 'stats',
+    label: 'Stats (wave-stats)',
+    params: [
+      { key: 'input_topic', label: 'Входной топик', type: 'text', defaultValue: 'raw.gen.chA' },
+      { key: 'output_topic', label: 'Выходной топик', type: 'text', defaultValue: 'stats.gen.chA' },
+      { key: 'group_id', label: 'Group ID', type: 'text', defaultValue: 'stats-gen-chA' },
+    ],
+  },
+  {
+    kind: 'operator',
+    type: 'filter',
+    label: 'Filter (wave-filter)',
+    params: [
+      { key: 'input_topic', label: 'Входной топик', type: 'text', defaultValue: 'raw.gen.chA' },
+      { key: 'output_topic', label: 'Выходной топик', type: 'text', defaultValue: 'filtered.gen.chA' },
+      { key: 'group_id', label: 'Group ID', type: 'text', defaultValue: 'filter-gen-chA' },
+      { key: 'low_hz', label: 'Нижняя граница (Гц)', type: 'number', defaultValue: 500 },
+      { key: 'high_hz', label: 'Верхняя граница (Гц)', type: 'number', defaultValue: 1500 },
+    ],
+  },
+  {
+    kind: 'operator',
+    type: 'threshold',
+    label: 'Threshold (wave-threshold)',
+    params: [
+      { key: 'input_topic', label: 'Входной топик', type: 'text', defaultValue: 'raw.gen.chA' },
+      { key: 'output_topic', label: 'Выходной топик', type: 'text', defaultValue: 'events.gen.chA' },
+      { key: 'group_id', label: 'Group ID', type: 'text', defaultValue: 'threshold-gen-chA' },
+      { key: 'threshold_mv', label: 'Порог (mv)', type: 'number', defaultValue: 0.8 },
+    ],
+  },
 ];
 
 export function getNodeTypeDef(kind: 'source' | 'operator', type: string): NodeTypeDef | undefined {
